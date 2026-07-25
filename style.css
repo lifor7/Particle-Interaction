@@ -1,11 +1,73 @@
+/* ============================================================
+   粒子交互 — 样式表
+   全屏无滚动，深色背景，操作提示
+   ============================================================ */
+
+/* ---- 全局重置：彻底消除滚动条 ---- */
 html,
 body {
   margin: 0;
-  overflow: hidden;
+  padding: 0;
+  overflow: hidden;          /* 禁止任何方向滚动 */
   background: #0a0a12;
+  width: 100%;
+  height: 100%;
 }
 
+/* ---- 画布全屏固定 ---- */
 canvas {
   display: block;
   cursor: crosshair;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* 关闭浏览器默认的触摸行为（如双击缩放、拖拽滚动） */
+  touch-action: none;
+}
+
+/* ---- 操作提示（左下角，低透明度等宽字体） ---- */
+.hint {
+  position: fixed;
+  bottom: 24px;
+  left: 28px;
+  z-index: 10;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  color: rgba(160, 190, 230, 0.5);
+  letter-spacing: 0.5px;
+  pointer-events: none;      /* 不拦截鼠标/触摸事件 */
+  user-select: none;
+  transition: color 0.4s ease;
+}
+
+/* 操作提示中的按键样式 */
+.hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  font-family: inherit;
+  font-size: 11px;
+  color: rgba(180, 210, 255, 0.75);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  letter-spacing: 0;
+}
+
+/* ---- 响应式：移动端缩小提示文字 ---- */
+@media (max-width: 768px) {
+  .hint {
+    bottom: 16px;
+    left: 16px;
+    font-size: 10px;
+    color: rgba(160, 190, 230, 0.35);
+  }
+
+  .hint kbd {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
 }
