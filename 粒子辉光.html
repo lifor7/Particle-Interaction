@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>粒子辉光 · 星系环状粒子系统</title>
+<style>
+/* ===================================================================
+   GLOBAL STYLES
+   =================================================================== */
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#14101e; /* 深黑偏暗紫深空底色（微提亮） */
+  overflow:hidden;
+  font-family:'Segoe UI','Inter',system-ui,sans-serif;
+  height:100vh;width:100vw;
+}
+canvas{display:block}
+
+/* ---- bottom hint ---- */
+.info-hint{
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+  color:rgba(255,255,255,0.25);font-size:11.5px;letter-spacing:0.6px;
+  pointer-events:none;user-select:none;transition:opacity 1.5s;
+}
+
+/* ===================================================================
+   CONTROL PANEL — Tech frosted glass
+   =================================================================== */
+.control-panel{
+  position:fixed;left:22px;top:50%;transform:translateY(-50%);z-index:10;
+  background:rgba(6,4,16,0.58);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:15px;
+  padding:20px 16px 16px;width:210px;
+  color:rgba(255,255,255,0.75);font-size:12px;line-height:1.55;
+  box-shadow:0 8px 44px rgba(0,0,0,0.50),inset 0 1px 0 rgba(255,255,255,0.03),0 0 0 1px rgba(120,80,200,0.06);
+  animation:panelIn 0.7s ease-out;
+}
+@keyframes panelIn{
+  from{opacity:0;transform:translateY(-50%) translateX(-14px)}
+  to{opacity:1;transform:translateY(-50%) translateX(0)}
+}
+
+.panel-title{
+  font-size:10px;text-transform:uppercase;letter-spacing:2px;
+  color:rgba(255,255,255,0.32);margin-bottom:12px;text-align:center;
+}
+.panel-title span{color:rgba(180,150,240,0.55)}
+
+/* section label with english sub */
+.section-label{
+  font-size:10px;letter-spacing:0.8px;
+  color:rgba(255,255,255,0.32);margin:11px 0 6px;
+  display:flex;justify-content:space-between;align-items:baseline;
+}
+.section-label .en{font-size:8.5px;color:rgba(255,255,255,0.22);letter-spacing:0.4px}
+.section-label .val{
+  color:rgba(200,180,240,0.65);font-size:10px;
+  font-variant-numeric:tabular-nums;
+}
+
+/* ---- color scheme buttons ---- */
+.scheme-buttons{display:flex;flex-wrap:wrap;gap:5px}
+.scheme-btn{
+  flex:1 1 calc(50% - 5px);min-width:74px;
+  padding:6px 3px;border:1px solid rgba(255,255,255,0.13);border-radius:6px;
+  background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.60);
+  font-size:11px;cursor:pointer;transition:all 0.25s;
+  font-family:inherit;letter-spacing:0.3px;text-align:center;
+}
+.scheme-btn:hover{
+  background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.28);
+  color:rgba(255,255,255,0.90);
+}
+.scheme-btn.active{
+  background:rgba(200,170,255,0.12);border-color:rgba(185,160,240,0.50);
+  color:#fff;box-shadow:0 0 10px rgba(160,130,230,0.20);
+}
+
+/* ---- color dot picker ---- */
+.color-dots{
+  display:flex;gap:7px;justify-content:flex-start;
+  margin-top:2px;
+}
+.color-dot{
+  width:17px;height:17px;border-radius:50%;
+  border:1.5px solid rgba(255,255,255,0.15);
+  cursor:pointer;transition:all 0.22s;
+  box-shadow:0 0 0 transparent;
+}
+.color-dot:hover{border-color:rgba(255,255,255,0.45);transform:scale(1.15)}
+.color-dot.active{
+  border-color:rgba(255,255,255,0.65);
+  box-shadow:0 0 12px currentColor;
+}
+
+/* ---- generic slider ---- */
+.ctrl-slider{
+  -webkit-appearance:none;appearance:none;width:100%;height:3.5px;
+  border-radius:2px;background:rgba(255,255,255,0.13);outline:none;
+  margin:4px 0 2px;
+}
+.ctrl-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:14px;height:14px;
+  border-radius:50%;background:rgba(200,185,245,0.80);
+  border:2px solid rgba(255,255,255,0.40);cursor:pointer;
+  box-shadow:0 0 8px rgba(155,125,220,0.32);transition:box-shadow 0.2s;
+}
+.ctrl-slider::-webkit-slider-thumb:hover{
+  box-shadow:0 0 16px rgba(170,140,235,0.50);
+}
+
+/* ---- gesture indicator ---- */
+.gesture-row{
+  margin-top:14px;padding-top:10px;
+  border-top:1px solid rgba(255,255,255,0.06);
+  display:flex;align-items:center;gap:8px;
+  font-size:10.5px;color:rgba(255,255,255,0.38);
+}
+.gesture-badge{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  background:#444;
+  transition:background 0.35s,box-shadow 0.35s,transform 0.35s;
+}
+.gesture-badge.tracking{background:#5f8;box-shadow:0 0 10px #5f8;transform:scale(1.2)}
+.gesture-badge.lost    {background:#f84;box-shadow:0 0 7px #f84}
+.gesture-badge.error   {background:#f44;box-shadow:0 0 7px #f44;animation:pulse 1.2s infinite}
+.gesture-badge.off     {background:#555}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* ===================================================================
+   CAMERA TOAST
+   =================================================================== */
+.cam-toast{
+  position:fixed;top:28px;left:50%;transform:translateX(-50%);z-index:20;
+  background:rgba(14,10,24,0.90);backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,0.10);border-radius:10px;
+  padding:13px 22px;max-width:400px;color:rgba(255,255,255,0.78);
+  font-size:12.5px;text-align:center;line-height:1.6;
+  display:none;
+  box-shadow:0 6px 30px rgba(0,0,0,0.50);
+  animation:toastIn 0.35s ease-out;
+}
+@keyframes toastIn{
+  from{opacity:0;transform:translateX(-50%) translateY(-10px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}
+}
+.cam-toast button{
+  margin-top:7px;padding:6px 18px;
+  border:1px solid rgba(255,255,255,0.20);border-radius:6px;
+  background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.82);
+  font-size:11.5px;cursor:pointer;font-family:inherit;
+  transition:background 0.2s;
+}
+.cam-toast button:hover{background:rgba(255,255,255,0.18)}
+
+/* ---- webcam preview ---- */
+#webcamPreview{
+  position:fixed;bottom:18px;right:18px;z-index:10;
+  width:130px;height:98px;border-radius:9px;
+  border:1px solid rgba(255,255,255,0.08);
+  object-fit:cover;opacity:0.50;
+  transform:scaleX(-1);display:none;
+  box-shadow:0 4px 16px rgba(0,0,0,0.35);
+}
+</style>
+</head>
+<body>
+
+<div class="info-hint" id="hint">✦ Drag to rotate &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Palm to push ✦</div>
+
+<!-- Camera toast -->
+<div class="cam-toast" id="camToast">
+  <span id="camToastMsg"></span><br>
+  <button id="camRetryBtn">Retry</button>
+</div>
+
+<!-- ===================================================================
+     CONTROL PANEL
+     =================================================================== -->
+<div class="control-panel" id="controlPanel">
+  <div class="panel-title"><span>◆</span>&nbsp; Particle Control</div>
+
+  <!-- Color Scheme -->
+  <div class="section-label">Palette <span class="en">配色方案</span></div>
+  <div class="scheme-buttons" id="schemeButtons">
+    <button class="scheme-btn active" data-scheme="neon">Neon</button>
+    <button class="scheme-btn" data-scheme="nebula">Nebula</button>
+    <button class="scheme-btn" data-scheme="ocean">Ocean</button>
+    <button class="scheme-btn" data-scheme="sunset">Sunset</button>
+    <button class="scheme-btn" data-scheme="default">Classic</button>
+  </div>
+
+  <!-- Color Quick Pick Dots -->
+  <div class="section-label">Quick Tint <span class="en">快速选色</span></div>
+  <div class="color-dots" id="colorDots">
+    <span class="color-dot active" data-tint="none" style="background:conic-gradient(#f0f, #0ff, #0f0, #ff0, #f0f);color:#fff"></span>
+    <span class="color-dot" data-tint="magenta" style="background:#e040a0;color:#e040a0"></span>
+    <span class="color-dot" data-tint="cyan" style="background:#30c8d8;color:#30c8d8"></span>
+    <span class="color-dot" data-tint="gold" style="background:#e8b830;color:#e8b830"></span>
+    <span class="color-dot" data-tint="purple" style="background:#9060d8;color:#9060d8"></span>
+    <span class="color-dot" data-tint="green" style="background:#40d870;color:#40d870"></span>
+  </div>
+
+  <!-- Particle Size -->
+  <div class="section-label">Size <span class="en">粒子大小</span> <span class="val" id="sizeVal">100%</span></div>
+  <input type="range" class="ctrl-slider" id="sizeSlider" min="0.35" max="2.0" value="1.0" step="0.01">
+
+  <!-- Repulsion Strength -->
+  <div class="section-label">Force <span class="en">斥力强度</span> <span class="val" id="repVal">1.00</span></div>
+  <input type="range" class="ctrl-slider" id="repSlider" min="0.2" max="2.5" value="1.0" step="0.01">
+
+  <!-- Rotation Flow Speed -->
+  <div class="section-label">Flow <span class="en">旋转流速</span> <span class="val" id="flowVal">1.00</span></div>
+  <input type="range" class="ctrl-slider" id="flowSlider" min="0" max="3.0" value="1.0" step="0.01">
+
+  <!-- Ring Thickness -->
+  <div class="section-label">Ring Thick <span class="en">环形厚度</span> <span class="val" id="thickVal">1.00</span></div>
+  <input type="range" class="ctrl-slider" id="thickSlider" min="0.4" max="2.5" value="1.0" step="0.01">
+
+  <!-- Bloom Strength -->
+  <div class="section-label">Bloom <span class="en">辉光强度</span> <span class="val" id="bloomVal">1.10</span></div>
+  <input type="range" class="ctrl-slider" id="bloomSlider" min="0.4" max="2.2" value="1.10" step="0.01">
+
+  <!-- Gesture Status -->
+  <div class="gesture-row">
+    <span class="gesture-badge off" id="gestureBadge"></span>
+    <span id="gestureLabel">Camera starting…</span>
+  </div>
+</div>
+
+<!-- Webcam -->
+<video id="webcamPreview" autoplay playsinline muted></video>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm" crossorigin="anonymous"></script>
+
+<!-- Three.js import map -->
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<!-- ===================================================================
+     MAIN SCRIPT
+     =================================================================== -->
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+/*
+ * =====================================================================
+ * TUNABLE PARAMETERS — 关键可调参数 (adjust to taste)
+ * =====================================================================
+ */
+const PARTICLE_COUNT       = 12000;   // 粒子总数
+const SPHERE_RADIUS        = 3.8;     // 内核球体半径
+const RING_INNER_RADIUS    = 3.2;     // 环带内径
+const RING_OUTER_RADIUS    = 7.5;     // 环带外径
+const RING_HALF_HEIGHT     = 0.40;    // 环带半高（扁平环状）
+const RADIAL_POWER_SPHERE  = 0.50;    // 球体径向幂次（<1 中心密集）
+const BROWNIAN_AMPLITUDE   = 0.018;   // 布朗运动振幅
+const BROWNIAN_SPEED       = 0.03;    // 布朗运动相位变化速率
+const FLOW_SPEED_BASE      = 0.12;    // 星系旋转基础流速 (rad/s at r=1)
+
+// -- 斥力 --
+const REPULSION_STRENGTH   = 0.048;   // 斥力基础强度
+const SPRING_DAMPING       = 0.945;   // 回弹阻尼 (<1, 越小回弹越快)
+const RING_RADIUS_MIN      = 1.0;     // 握拳环半径
+const RING_RADIUS_MAX      = 3.8;     // 张掌环半径
+const PALM_SMOOTHING       = 0.24;    // 掌心缓动系数
+const RING_SMOOTHING       = 0.17;    // 环径缓动系数
+const PALM_AVG_LEN         = 5;       // 掌心滑动平均窗口长度
+const DETECTION_INTERVAL   = 3;       // 每 N 帧检测一次手势
+const FADE_DURATION_FRAMES = 30;      // 手消失后斥力淡出帧数
+const CLEAN_HOLE_FACTOR    = 0.82;    // 环内清扫因子 (<1 确保空洞干净)
+
+// -- 辉光 --
+const BLOOM_STRENGTH_DEF   = 1.10;
+const BLOOM_RADIUS         = 0.30;
+const BLOOM_THRESHOLD      = 0.05;
+
+// -- 视口映射 --
+const WORLD_RANGE_X = 8.0;
+const WORLD_RANGE_Y = 5.8;
+
+// -- 闪烁 --
+const FLICKER_CHANCE   = 0.010;
+const FLICKER_BOOST    = 2.5;
+const FLICKER_FRAMES   = 5;
+
+// -- 外围飘散粒子 --
+const DRIFT_COUNT       = 300;     // 额外飘散粒子数
+const DRIFT_RADIUS_MIN  = RING_OUTER_RADIUS;
+const DRIFT_RADIUS_MAX  = RING_OUTER_RADIUS + 1.5;
+
+/*
+ * =====================================================================
+ * RUNTIME VARIABLES (driven by UI sliders)
+ * =====================================================================
+ */
+let userSizeScale    = 1.0;
+let userRepScale     = 1.0;
+let userFlowScale    = 1.0;
+let userRingThick    = 1.0;
+let userBloom        = BLOOM_STRENGTH_DEF;
+let currentScheme    = 'neon';
+let currentTint      = 'none';
+let currentTintHue   = null;
+
+// ==================== SCENE SETUP ====================
+
+const renderer = new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#14101e'); // 微提亮黑紫底色
+scene.fog = new THREE.FogExp2(0x14101e, 0.00006);
+
+const camera = new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,100);
+camera.position.set(0,1.8,15);
+camera.lookAt(0,0,0);
+
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 5;
+controls.maxDistance = 30;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.25;
+controls.target.set(0,0,0);
+controls.update();
+
+// ---- bloom ----
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth,window.innerHeight),
+  userBloom, BLOOM_RADIUS, BLOOM_THRESHOLD
+);
+composer.addPass(bloomPass);
+
+// ---- glow texture ----
+function createGlowTex(){
+  const s=128,c=document.createElement('canvas');
+  c.width=s;c.height=s;
+  const ctx=c.getContext('2d'),h=s/2;
+  const g=ctx.createRadialGradient(h,h,0,h,h,h);
+  g.addColorStop(0,   'rgba(255,255,255,1)');
+  g.addColorStop(0.03,'rgba(255,255,255,0.95)');
+  g.addColorStop(0.12,'rgba(255,255,255,0.70)');
+  g.addColorStop(0.28,'rgba(255,255,255,0.30)');
+  g.addColorStop(0.52,'rgba(255,255,255,0.06)');
+  g.addColorStop(0.78,'rgba(255,255,255,0.008)');
+  g.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,s,s);
+  const t=new THREE.CanvasTexture(c);t.needsUpdate=true;return t;
+}
+const glowTex = createGlowTex();
+
+// ==================== COLOR SCHEMES ====================
+
+const COLOR_SCHEMES = {
+  // ★ 霓虹 (new default) — 玫红/洋红主环 + 青蓝/荧光绿杂色 + 环边高光
+  neon: {
+    inner: [[0.90,0.85,0.52],[0.93,0.80,0.56],[0.88,0.78,0.50],[0.95,0.75,0.54]],
+    mid:   [[0.85,0.72,0.55],[0.55,0.60,0.58],[0.87,0.60,0.58],[0.58,0.65,0.55]],
+    outer: [[0.54,0.55,0.62],[0.38,0.70,0.55],[0.57,0.45,0.68],[0.60,0.35,0.72]],
+  },
+  nebula: {
+    inner: [[0.98,0.80,0.45],[0.95,0.75,0.48],[0.00,0.70,0.50],[0.96,0.72,0.42]],
+    mid:   [[0.88,0.60,0.52],[0.85,0.55,0.55],[0.90,0.50,0.50],[0.82,0.58,0.48]],
+    outer: [[0.78,0.40,0.65],[0.80,0.30,0.70],[0.75,0.20,0.78],[0.82,0.15,0.82]],
+  },
+  ocean: {
+    inner: [[0.58,0.70,0.42],[0.56,0.72,0.45],[0.60,0.65,0.40],[0.57,0.68,0.48]],
+    mid:   [[0.55,0.50,0.55],[0.53,0.48,0.58],[0.56,0.52,0.52],[0.54,0.45,0.60]],
+    outer: [[0.56,0.25,0.75],[0.58,0.18,0.82],[0.57,0.10,0.90],[0.55,0.12,0.88]],
+  },
+  sunset: {
+    inner: [[0.10,0.82,0.55],[0.12,0.78,0.52],[0.08,0.85,0.58],[0.11,0.75,0.50]],
+    mid:   [[0.07,0.60,0.58],[0.09,0.55,0.55],[0.06,0.58,0.60],[0.10,0.52,0.52]],
+    outer: [[0.80,0.30,0.68],[0.82,0.22,0.74],[0.78,0.18,0.80],[0.85,0.15,0.82]],
+  },
+  default: {
+    inner: [[0.93,0.75,0.58],[0.85,0.65,0.60],[0.90,0.70,0.55],[0.82,0.60,0.62]],
+    mid:   [[0.55,0.55,0.58],[0.57,0.50,0.62],[0.53,0.48,0.56],[0.56,0.58,0.54]],
+    outer: [[0.57,0.35,0.72],[0.58,0.25,0.78],[0.60,0.10,0.88],[0.55,0.15,0.85]],
+  },
+};
+
+// Tint hue mapping
+const TINT_HUES = {
+  none: null, magenta: 0.88, cyan: 0.54, gold: 0.12, purple: 0.76, green: 0.38
+};
+
+function pickLayerColor(palette){
+  const [h,s,l] = palette[Math.floor(Math.random()*palette.length)];
+  let hue = h + (Math.random()-0.5)*0.03;
+  // Apply tint (shift hue toward target)
+  if(currentTintHue !== null){
+    const diff = currentTintHue - hue;
+    hue += diff * 0.55; // 55% blend toward tint
+  }
+  const sat = Math.max(0.10,Math.min(1,s+(Math.random()-0.5)*0.10));
+  const light = Math.max(0.22,Math.min(0.95,l+(Math.random()-0.5)*0.07));
+  return new THREE.Color().setHSL(hue,sat,light);
+}
+
+// ==================== BUILD PARTICLES：内核球体 + 外围环状 ====================
+
+const layerDefs = [
+  {name:'inner',baseSize:0.30,brightness:1.20,schemeKey:'inner',countFrac:0.45}, // 45% 内核球体
+  {name:'mid',  baseSize:0.22,brightness:1.02,schemeKey:'mid',  countFrac:0.32}, // 32% 内环
+  {name:'outer',baseSize:0.16,brightness:0.88,schemeKey:'outer',countFrac:0.23}, // 23% 外环
+];
+
+const layers = [];
+const particleGroup = new THREE.Group();
+scene.add(particleGroup);
+
+// Generate particles per layer with different geometry
+const allParts = [];
+for(const def of layerDefs){
+  const count = Math.round(PARTICLE_COUNT * def.countFrac);
+  const li = layerDefs.indexOf(def);
+
+  for(let i=0;i<count;i++){
+    let x,y,z,r,theta;
+
+    if(def.name==='inner'){
+      // ====== 内核：三维球体分布（中心密、外围疏） ======
+      theta = Math.random()*Math.PI*2;
+      const phi = Math.acos(2*Math.random()-1);
+      r = SPHERE_RADIUS*Math.pow(Math.random(),RADIAL_POWER_SPHERE);
+      x = r*Math.sin(phi)*Math.cos(theta);
+      y = r*Math.sin(phi)*Math.sin(theta);
+      z = r*Math.cos(phi);
+    }else{
+      // ====== 外围：扁平环状分布 ======
+      theta = Math.random()*Math.PI*2;
+      const rMin = def.name==='mid' ? RING_INNER_RADIUS : RING_OUTER_RADIUS*0.7;
+      const rMax = def.name==='mid' ? RING_OUTER_RADIUS*0.7 : RING_OUTER_RADIUS;
+      r = rMin+Math.random()*(rMax-rMin);
+      // 半径分布偏向外沿（环状高亮在外缘）
+      if(def.name==='mid') r = rMin+(rMax-rMin)*Math.pow(Math.random(),0.65);
+      const hh = RING_HALF_HEIGHT*(def.name==='outer'?2.0:1.0);
+      const yBase = (Math.random()-0.5)*2*hh*Math.pow(Math.random(),1.3);
+      x = r*Math.cos(theta);
+      y = yBase;
+      z = r*Math.sin(theta);
+    }
+
+    allParts.push({layer:li, x,y,z, r, theta});
+  }
+}
+
+// Build Points per layer
+for(const def of layerDefs){
+  const li = layerDefs.indexOf(def);
+  const parts = allParts.filter(p=>p.layer===li);
+  const count = parts.length;
+
+  const posArr = new Float32Array(count*3);
+  const colArr = new Float32Array(count*3);
+  const palette = COLOR_SCHEMES[currentScheme][def.schemeKey];
+
+  for(let i=0;i<count;i++){
+    const p=parts[i];
+    posArr[i*3]=p.x; posArr[i*3+1]=p.y; posArr[i*3+2]=p.z;
+    const c=pickLayerColor(palette);
+    colArr[i*3]=Math.min(1,c.r*def.brightness);
+    colArr[i*3+1]=Math.min(1,c.g*def.brightness);
+    colArr[i*3+2]=Math.min(1,c.b*def.brightness);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+
+  const mat = new THREE.PointsMaterial({
+    size:def.baseSize, map:glowTex, vertexColors:true,
+    blending:THREE.AdditiveBlending, depthWrite:false, depthTest:true,
+    transparent:true, opacity:0.88,
+  });
+
+  const pts = new THREE.Points(geo,mat);
+  particleGroup.add(pts);
+
+  // Per-particle data
+  const origPos = new Float32Array(posArr);
+  const phases = new Float32Array(count*3);
+  for(let i=0;i<count*3;i++)phases[i]=Math.random()*Math.PI*2;
+  const displacement = new Float32Array(count*3);
+  // Flow: store initial theta per particle
+  const initThetas = new Float32Array(count);
+  for(let i=0;i<count;i++)initThetas[i]=parts[i].theta;
+  const radii = new Float32Array(count);
+  for(let i=0;i<count;i++)radii[i]=parts[i].r;
+  // Flicker (outer layer only)
+  const flickTimers = (def.name==='outer')?new Uint8Array(count):null;
+  const flickSaved  = (def.name==='outer')?new Float32Array(count*3):null;
+
+  layers.push({
+    name:def.name, points:pts, geometry:geo, material:mat,
+    origPositions:origPos, phases, displacement,
+    initThetas, radii,
+    flickTimers, flickSaved,
+    baseSize:def.baseSize, brightness:def.brightness,
+    schemeKey:def.schemeKey, count,
+  });
+}
+
+// ---- Peripheral drift particles (外围飘散点缀) ----
+(function createDriftParticles(){
+  const count = DRIFT_COUNT;
+  const posArr = new Float32Array(count*3);
+  const colArr = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    const theta=Math.random()*Math.PI*2;
+    const r=DRIFT_RADIUS_MIN+Math.random()*(DRIFT_RADIUS_MAX-DRIFT_RADIUS_MIN);
+    const z=(Math.random()-0.5)*2*RING_HALF_HEIGHT*3.5;
+    posArr[i*3]=r*Math.cos(theta);posArr[i*3+1]=z;posArr[i*3+2]=r*Math.sin(theta);
+    const c=new THREE.Color().setHSL(0.56+Math.random()*0.08,0.3,0.65+Math.random()*0.25);
+    colArr[i*3]=c.r;colArr[i*3+1]=c.g;colArr[i*3+2]=c.b;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+  const mat=new THREE.PointsMaterial({
+    size:0.12,map:glowTex,vertexColors:true,
+    blending:THREE.AdditiveBlending,depthWrite:false,depthTest:true,
+    transparent:true,opacity:0.55,
+  });
+  const driftPts=new THREE.Points(geo,mat);
+  particleGroup.add(driftPts);
+  layers.push({
+    name:'drift',points:driftPts,geometry:geo,material:mat,
+    origPositions:new Float32Array(posArr), phases:new Float32Array(count*3),
+    displacement:new Float32Array(count*3),
+    initThetas:null, radii:null, flickTimers:null, flickSaved:null,
+    baseSize:0.12, brightness:1.0, schemeKey:'outer', count,
+    isDrift:true,
+  });
+  // Init drift phases
+  const dp=layers[layers.length-1].phases;
+  for(let i=0;i<count*3;i++)dp[i]=Math.random()*Math.PI*2;
+})();
+
+// ==================== HAND TRACKING STATE ====================
+
+const handState = {
+  detected:false, targetDetected:false,
+  palmX:0,palmY:0,palmZ:2.5,
+  targetPalmX:0,targetPalmY:0,targetPalmZ:2.5,
+  ringRadius:1.8, targetRingRadius:1.8,
+  repulsionActive:false, repulsionFadeOut:0,
+};
+const palmAvgBuf = {x:[],y:[]};
+function pushPalmAvg(x,y){
+  palmAvgBuf.x.push(x);palmAvgBuf.y.push(y);
+  while(palmAvgBuf.x.length>PALM_AVG_LEN)palmAvgBuf.x.shift();
+  while(palmAvgBuf.y.length>PALM_AVG_LEN)palmAvgBuf.y.shift();
+}
+function getPalmAvg(){
+  if(!palmAvgBuf.x.length)return{x:0,y:0};
+  const sx=palmAvgBuf.x.reduce((a,b)=>a+b,0);
+  const sy=palmAvgBuf.y.reduce((a,b)=>a+b,0);
+  return{x:sx/palmAvgBuf.x.length,y:sy/palmAvgBuf.y.length};
+}
+
+// UI refs
+const gestureBadge  = document.getElementById('gestureBadge');
+const gestureLabel  = document.getElementById('gestureLabel');
+const webcamVideo   = document.getElementById('webcamPreview');
+const camToast      = document.getElementById('camToast');
+const camToastMsg   = document.getElementById('camToastMsg');
+
+function setGestureUI(state){
+  gestureBadge.className='gesture-badge '+state;
+  const m={tracking:'Tracking hand…',lost:'No hand detected',error:'Camera error',off:'Camera off'};
+  gestureLabel.textContent=m[state]||'';
+}
+function showCamToast(msg,showRetry){
+  camToastMsg.textContent=msg;
+  document.getElementById('camRetryBtn').style.display=showRetry?'':'none';
+  camToast.style.display='block';
+  clearTimeout(camToast._t);
+  camToast._t=setTimeout(()=>{camToast.style.display='none'},9000);
+}
+document.getElementById('camRetryBtn').addEventListener('click',()=>{
+  camToast.style.display='none';initHandTracking();
+});
+
+// ==================== CAMERA + MEDIAPIPE INIT ====================
+
+let handLandmarker=null, videoReady=false, detectionFrameCount=0;
+
+function hasCameraDevice(){
+  return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+}
+
+async function initHandTracking(){
+  try{
+    if(!hasCameraDevice()){
+      showCamToast('No camera API available. Running in particle-only mode.',false);
+      setGestureUI('off');gestureLabel.textContent='No camera';return;
+    }
+    setGestureUI('off');gestureLabel.textContent='Requesting camera…';
+    let stream;
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false
+      });
+    }catch(e){
+      const msg=e.name==='NotAllowedError'
+        ?'Camera permission denied. Click the lock icon in the address bar to enable it.'
+        :e.name==='NotFoundError'
+        ?'No camera detected. Connect a camera and retry.'
+        :`Camera error: ${e.message}`;
+      showCamToast(msg,true);
+      setGestureUI('error');gestureLabel.textContent='Camera unavailable';return;
+    }
+    webcamVideo.srcObject=stream;
+    await webcamVideo.play();
+    await new Promise(r=>webcamVideo.addEventListener('loadedmetadata',r,{once:true}));
+    videoReady=true;webcamVideo.style.display='block';
+
+    gestureLabel.textContent='Loading model…';
+    if(typeof FilesetResolver==='undefined'){
+      throw new Error('MediaPipe library not loaded (CDN unreachable or file:// protocol). Use http:// instead.');
+    }
+    const vision=await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm');
+    handLandmarker=await HandLandmarker.createFromOptions(vision,{
+      baseOptions:{
+        modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
+        delegate:'GPU'},
+      runningMode:'VIDEO',numHands:1,
+    });
+    camToast.style.display='none';
+    setGestureUI('lost');gestureLabel.textContent='Show your palm 👋';
+  }catch(e){
+    setGestureUI('error');gestureLabel.textContent='Init failed';
+    showCamToast('Gesture model failed to load. Running in particle-only mode.',true);
+    if(webcamVideo.srcObject){webcamVideo.srcObject.getTracks().forEach(t=>t.stop());webcamVideo.srcObject=null;}
+    webcamVideo.style.display='none';videoReady=false;handLandmarker=null;
+  }
+}
+initHandTracking();
+
+// ---- hand detection helpers ----
+function getPalmCenter(lm){const ix=[0,5,9,13,17];let cx=0,cy=0,cz=0;for(const i of ix){cx+=lm[i].x;cy+=lm[i].y;cz+=lm[i].z;}return{x:cx/ix.length,y:cy/ix.length,z:cz/ix.length};}
+function computeRingRadius(lm){const o=Math.hypot(lm[12].x-lm[0].x,lm[12].y-lm[0].y);const t=Math.max(0,Math.min(1,(o-0.18)/0.30));return RING_RADIUS_MIN+t*(RING_RADIUS_MAX-RING_RADIUS_MIN);}
+function mapToWorldSpace(nx,ny,pz){return{x:(0.5-nx)*WORLD_RANGE_X*2,y:(0.5-ny)*WORLD_RANGE_Y*2,z:pz};}
+
+// ==================== ANIMATION LOOP ====================
+
+const clock = new THREE.Clock();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.1);
+  const dt60=dt*60;
+  const elapsed=clock.getElapsedTime();
+
+  controls.update();
+
+  // Global rotation (slow)
+  particleGroup.rotation.y += 0.0003;
+  particleGroup.updateMatrixWorld();
+
+  // ---- Gesture detection (throttled) ----
+  detectionFrameCount++;
+  if(detectionFrameCount%DETECTION_INTERVAL===0&&handLandmarker&&videoReady&&webcamVideo.readyState>=2){
+    try{
+      const results=handLandmarker.detectForVideo(webcamVideo,performance.now());
+      if(results.landmarks&&results.landmarks.length>0){
+        const lm=results.landmarks[0];
+        const palm=getPalmCenter(lm);
+        const w=mapToWorldSpace(palm.x,palm.y,handState.targetPalmZ);
+        pushPalmAvg(w.x,w.y);const avg=getPalmAvg();
+        handState.targetPalmX=avg.x;handState.targetPalmY=avg.y;
+        handState.targetRingRadius=computeRingRadius(lm);
+        handState.targetDetected=true;
+        if(!handState.detected){handState.repulsionActive=true;handState.repulsionFadeOut=0;handState.palmX=avg.x;handState.palmY=avg.y;}
+      }else{handState.targetDetected=false;}
+    }catch(e){handState.targetDetected=false;}
+  }
+
+  // ---- Smooth palm + ring radius ----
+  if(handState.targetDetected){
+    handState.palmX+=(handState.targetPalmX-handState.palmX)*PALM_SMOOTHING;
+    handState.palmY+=(handState.targetPalmY-handState.palmY)*PALM_SMOOTHING;
+    handState.ringRadius+=(handState.targetRingRadius-handState.ringRadius)*RING_SMOOTHING;
+    handState.detected=true;setGestureUI('tracking');
+  }else if(handState.detected){
+    handState.repulsionFadeOut++;
+    if(handState.repulsionFadeOut>FADE_DURATION_FRAMES){
+      handState.detected=false;handState.repulsionActive=false;setGestureUI('lost');
+      palmAvgBuf.x.length=0;palmAvgBuf.y.length=0;
+    }
+  }
+
+  // World -> local
+  const palmW=new THREE.Vector3(handState.palmX,handState.palmY,handState.palmZ);
+  const palmL=particleGroup.worldToLocal(palmW.clone());
+
+  const effRep=REPULSION_STRENGTH*userRepScale;
+  const ringR=handState.ringRadius;
+
+  // ---- Per-layer particle update ----
+  for(const layer of layers){
+    const posAttr=layer.geometry.attributes.position;
+    const colAttr=layer.geometry.attributes.color;
+    const posArr=posAttr.array;const colArr=colAttr?colAttr.array:null;
+    const orig=layer.origPositions;const phases=layer.phases;
+    const disp=layer.displacement;const n=layer.count;
+    const isOuter=(layer.flickTimers!==null);
+    const isDrift=!!layer.isDrift;
+    const repOn=handState.repulsionActive&&!isDrift; // drift particles不受斥力影响
+    let colDirty=false;
+
+    const lpx=palmL.x,lpy=palmL.y,lpz=palmL.z;
+
+    // Ring sharpness from thickness slider (inverted: higher thick = softer edge)
+    const ringSharpness=1.5+(1.0/userRingThick)*2.0; // 2.5~4.5
+
+    for(let i=0;i<n;i++){
+      const i3=i*3;
+
+      // -- Brownian --
+      phases[i3]+=(Math.random()-0.5)*BROWNIAN_SPEED*dt60;
+      phases[i3+1]+=(Math.random()-0.5)*BROWNIAN_SPEED*dt60;
+      phases[i3+2]+=(Math.random()-0.5)*BROWNIAN_SPEED*dt60;
+      const bx=Math.sin(phases[i3])*BROWNIAN_AMPLITUDE;
+      const by=Math.sin(phases[i3+1])*BROWNIAN_AMPLITUDE;
+      const bz=Math.sin(phases[i3+2])*BROWNIAN_AMPLITUDE;
+
+      // -- Repulsion (force field) --
+      if(repOn){
+        const px=orig[i3]+disp[i3];
+        const py=orig[i3+1]+disp[i3+1];
+        const pz=orig[i3+2]+disp[i3+2];
+        const dx=px-lpx,dy=py-lpy,dz=pz-lpz;
+        const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
+        if(dist<ringR&&dist>0.001){
+          const t=1-dist/ringR;
+          const force=effRep*Math.pow(t,ringSharpness)*dt60;
+          const inv=1/dist;
+          disp[i3]+=dx*inv*force;disp[i3+1]+=dy*inv*force;disp[i3+2]+=dz*inv*force;
+        }
+      }
+
+      // -- Spring damping --
+      disp[i3]*=SPRING_DAMPING;disp[i3+1]*=SPRING_DAMPING;disp[i3+2]*=SPRING_DAMPING;
+      if(Math.abs(disp[i3])<0.0001)disp[i3]=0;
+      if(Math.abs(disp[i3+1])<0.0001)disp[i3+1]=0;
+      if(Math.abs(disp[i3+2])<0.0001)disp[i3+2]=0;
+
+      // -- Compose final position --
+      let fx=orig[i3]+bx+disp[i3];
+      let fy=orig[i3+1]+by+disp[i3+1];
+      let fz=orig[i3+2]+bz+disp[i3+2];
+
+      // -- Clean hole: ensure no particles linger inside ring --
+      if(repOn){
+        const cdx=fx-lpx,cdy=fy-lpy,cdz=fz-lpz;
+        const cd=Math.sqrt(cdx*cdx+cdy*cdy+cdz*cdz);
+        const minDist=ringR*CLEAN_HOLE_FACTOR;
+        if(cd<minDist&&cd>0.001){
+          const s=minDist/cd;
+          fx=lpx+cdx*s;fy=lpy+cdy*s;fz=lpz+cdz*s;
+          // Also push displacement to match
+          disp[i3]=fx-orig[i3]-bx;disp[i3+1]=fy-orig[i3+1]-by;disp[i3+2]=fz-orig[i3+2]-bz;
+        }
+      }
+
+      // -- Distance constraint (40% max deviation) --
+      const od=Math.sqrt(orig[i3]*orig[i3]+orig[i3+1]*orig[i3+1]+orig[i3+2]*orig[i3+2]);
+      const fd=Math.sqrt(fx*fx+fy*fy+fz*fz);
+      const md=od*1.4;
+      if(fd>md&&fd>0.001){const s=md/fd;fx*=s;fy*=s;fz*=s;
+        disp[i3]=fx-orig[i3]-bx;disp[i3+1]=fy-orig[i3+1]-by;disp[i3+2]=fz-orig[i3+2]-bz;}
+
+      posArr[i3]=fx;posArr[i3+1]=fy;posArr[i3+2]=fz;
+
+      // -- Flicker for outer particles --
+      if(isOuter&&colArr){
+        let ft=layer.flickTimers[i];
+        if(ft>0){ft--;layer.flickTimers[i]=ft;if(ft===0){colArr[i3]=layer.flickSaved[i3];colArr[i3+1]=layer.flickSaved[i3+1];colArr[i3+2]=layer.flickSaved[i3+2];colDirty=true;}}
+        else if(!repOn&&Math.random()<FLICKER_CHANCE*dt60){
+          layer.flickSaved[i3]=colArr[i3];layer.flickSaved[i3+1]=colArr[i3+1];layer.flickSaved[i3+2]=colArr[i3+2];
+          const boost=Math.min(1,FLICKER_BOOST*(0.7+Math.random()*0.3));
+          colArr[i3]=Math.min(1,colArr[i3]*boost);colArr[i3+1]=Math.min(1,colArr[i3+1]*boost);colArr[i3+2]=Math.min(1,colArr[i3+2]*boost);
+          layer.flickTimers[i]=FLICKER_FRAMES;colDirty=true;
+        }
+      }
+    }
+    posAttr.needsUpdate=true;
+    if(colDirty&&colAttr)colAttr.needsUpdate=true;
+  }
+
+  // ---- Galaxy differential rotation (per-layer Y-axis rotation modifier) ----
+  // Instead of messing per-particle, rotate each layer's Points at different speeds
+  if(userFlowScale>0.001){
+    const baseSpeed=FLOW_SPEED_BASE*userFlowScale*dt60*0.016;
+    for(const layer of layers){
+      if(layer.isDrift){layer.points.rotation.y+=baseSpeed*0.4;continue;}
+      // inner rotates faster, outer slower (like real galaxy)
+      const speedMod=layer.name==='inner'?1.4:layer.name==='mid'?0.85:0.45;
+      layer.points.rotation.y+=baseSpeed*speedMod;
+    }
+  }
+
+  // ---- Bloom ----
+  bloomPass.strength=userBloom+Math.sin(elapsed*0.42)*0.05;
+
+  composer.render();
+}
+
+// ==================== UI INTERACTIONS ====================
+
+// -- Scheme buttons --
+const schemeBtns=document.querySelectorAll('.scheme-btn');
+function updateActiveSchemeBtn(scheme){
+  schemeBtns.forEach(b=>b.classList.toggle('active',b.dataset.scheme===scheme));
+}
+function switchColorScheme(schemeKey){
+  if(!COLOR_SCHEMES[schemeKey]||schemeKey===currentScheme)return;
+  currentScheme=schemeKey;
+  const scheme=COLOR_SCHEMES[schemeKey];
+  for(const layer of layers){
+    if(layer.isDrift)continue; // skip drift
+    const palette=scheme[layer.schemeKey];
+    const colAttr=layer.geometry.attributes.color;const colArr=colAttr.array;
+    for(let i=0;i<layer.count;i++){
+      const c=pickLayerColor(palette);
+      colArr[i*3]=Math.min(1,c.r*layer.brightness);
+      colArr[i*3+1]=Math.min(1,c.g*layer.brightness);
+      colArr[i*3+2]=Math.min(1,c.b*layer.brightness);
+    }
+    colAttr.needsUpdate=true;
+    if(layer.flickSaved)layer.flickSaved.set(colArr);
+  }
+  updateActiveSchemeBtn(schemeKey);
+}
+schemeBtns.forEach(b=>b.addEventListener('click',()=>{const s=b.dataset.scheme;if(s)switchColorScheme(s);}));
+
+// -- Color dots --
+const colorDots=document.querySelectorAll('.color-dot');
+function updateActiveDot(tint){
+  colorDots.forEach(d=>d.classList.toggle('active',d.dataset.tint===tint));
+}
+colorDots.forEach(d=>d.addEventListener('click',()=>{
+  const tint=d.dataset.tint;
+  if(!tint||tint===currentTint)return;
+  currentTint=tint;currentTintHue=TINT_HUES[tint];
+  updateActiveDot(tint);
+  // Re-apply current scheme (which will use the new tint)
+  switchColorScheme(currentScheme);
+  // Need to force re-color even if same scheme
+  const scheme=COLOR_SCHEMES[currentScheme];
+  for(const layer of layers){
+    if(layer.isDrift)continue;
+    const palette=scheme[layer.schemeKey];
+    const colAttr=layer.geometry.attributes.color;const colArr=colAttr.array;
+    for(let i=0;i<layer.count;i++){
+      const c=pickLayerColor(palette);
+      colArr[i*3]=Math.min(1,c.r*layer.brightness);
+      colArr[i*3+1]=Math.min(1,c.g*layer.brightness);
+      colArr[i*3+2]=Math.min(1,c.b*layer.brightness);
+    }
+    colAttr.needsUpdate=true;
+    if(layer.flickSaved)layer.flickSaved.set(colArr);
+  }
+}));
+
+// -- Sliders --
+const sizeSlider=document.getElementById('sizeSlider');
+const sizeVal=document.getElementById('sizeVal');
+sizeSlider.addEventListener('input',()=>{
+  userSizeScale=parseFloat(sizeSlider.value);sizeVal.textContent=Math.round(userSizeScale*100)+'%';
+  for(const layer of layers){if(!layer.isDrift)layer.material.size=layer.baseSize*userSizeScale;}
+});
+
+const repSlider=document.getElementById('repSlider');
+const repVal=document.getElementById('repVal');
+repSlider.addEventListener('input',()=>{
+  userRepScale=parseFloat(repSlider.value);repVal.textContent=userRepScale.toFixed(2);
+});
+
+const flowSlider=document.getElementById('flowSlider');
+const flowVal=document.getElementById('flowVal');
+flowSlider.addEventListener('input',()=>{
+  userFlowScale=parseFloat(flowSlider.value);flowVal.textContent=userFlowScale.toFixed(2);
+});
+
+const thickSlider=document.getElementById('thickSlider');
+const thickVal=document.getElementById('thickVal');
+thickSlider.addEventListener('input',()=>{
+  userRingThick=parseFloat(thickSlider.value);thickVal.textContent=userRingThick.toFixed(2);
+});
+
+const bloomSlider=document.getElementById('bloomSlider');
+const bloomVal=document.getElementById('bloomVal');
+bloomSlider.addEventListener('input',()=>{
+  userBloom=parseFloat(bloomSlider.value);bloomPass.strength=userBloom;bloomVal.textContent=userBloom.toFixed(2);
+});
+
+// ==================== KEYBOARD SHORTCUTS ====================
+
+window.addEventListener('keydown',e=>{
+  switch(e.key.toLowerCase()){
+    case'1':switchColorScheme('neon');break;
+    case'2':switchColorScheme('nebula');break;
+    case'3':switchColorScheme('ocean');break;
+    case'4':switchColorScheme('sunset');break;
+    case'5':switchColorScheme('default');break;
+    case'r':sizeSlider.value=1.0;sizeSlider.dispatchEvent(new Event('input'));break;
+    case'f':flowSlider.value=userFlowScale<0.1?1.0:0;flowSlider.dispatchEvent(new Event('input'));break;
+    case'b':bloomSlider.value=userBloom>0.8?0.5:BLOOM_STRENGTH_DEF;bloomSlider.dispatchEvent(new Event('input'));break;
+  }
+});
+
+// ==================== RESPONSIVE ====================
+
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);composer.setSize(window.innerWidth,window.innerHeight);
+});
+
+// ==================== STARTUP ====================
+
+setTimeout(()=>{const h=document.getElementById('hint');if(h)h.style.opacity='0';},10000);
+animate();
+</script>
+</body>
+</html>
