@@ -10,7 +10,7 @@
    =================================================================== */
 *{margin:0;padding:0;box-sizing:border-box}
 body{
-  background:#14101e; /* 深黑偏暗紫深空底色（微提亮） */
+  background:#0a0816; /* 更深邃的深空底色（黑蓝紫） */
   overflow:hidden;
   font-family:'Segoe UI','Inter',system-ui,sans-serif;
   height:100vh;width:100vw;
@@ -60,6 +60,20 @@ canvas{display:block}
 .section-label .val{
   color:rgba(200,180,240,0.65);font-size:10px;
   font-variant-numeric:tabular-nums;
+}
+
+/* ---- form (形态) buttons ---- */
+.form-buttons{display:flex;gap:6px}
+.form-btn{
+  flex:1;padding:7px 4px;border:1px solid rgba(255,255,255,0.16);border-radius:7px;
+  background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.65);
+  font-size:12px;cursor:pointer;transition:all 0.25s;font-family:inherit;letter-spacing:0.5px;text-align:center;
+}
+.form-btn:hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.32);color:#fff}
+.form-btn.active{
+  background:linear-gradient(135deg,rgba(120,90,220,0.26),rgba(80,140,220,0.18));
+  border-color:rgba(165,140,240,0.55);color:#fff;
+  box-shadow:0 0 12px rgba(140,120,230,0.25);
 }
 
 /* ---- color scheme buttons ---- */
@@ -112,71 +126,11 @@ canvas{display:block}
 .ctrl-slider::-webkit-slider-thumb:hover{
   box-shadow:0 0 16px rgba(170,140,235,0.50);
 }
-
-/* ---- gesture indicator ---- */
-.gesture-row{
-  margin-top:14px;padding-top:10px;
-  border-top:1px solid rgba(255,255,255,0.06);
-  display:flex;align-items:center;gap:8px;
-  font-size:10.5px;color:rgba(255,255,255,0.38);
-}
-.gesture-badge{
-  width:10px;height:10px;border-radius:50%;flex-shrink:0;
-  background:#444;
-  transition:background 0.35s,box-shadow 0.35s,transform 0.35s;
-}
-.gesture-badge.tracking{background:#5f8;box-shadow:0 0 10px #5f8;transform:scale(1.2)}
-.gesture-badge.lost    {background:#f84;box-shadow:0 0 7px #f84}
-.gesture-badge.error   {background:#f44;box-shadow:0 0 7px #f44;animation:pulse 1.2s infinite}
-.gesture-badge.off     {background:#555}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-
-/* ===================================================================
-   CAMERA TOAST
-   =================================================================== */
-.cam-toast{
-  position:fixed;top:28px;left:50%;transform:translateX(-50%);z-index:20;
-  background:rgba(14,10,24,0.90);backdrop-filter:blur(12px);
-  border:1px solid rgba(255,255,255,0.10);border-radius:10px;
-  padding:13px 22px;max-width:400px;color:rgba(255,255,255,0.78);
-  font-size:12.5px;text-align:center;line-height:1.6;
-  display:none;
-  box-shadow:0 6px 30px rgba(0,0,0,0.50);
-  animation:toastIn 0.35s ease-out;
-}
-@keyframes toastIn{
-  from{opacity:0;transform:translateX(-50%) translateY(-10px)}
-  to{opacity:1;transform:translateX(-50%) translateY(0)}
-}
-.cam-toast button{
-  margin-top:7px;padding:6px 18px;
-  border:1px solid rgba(255,255,255,0.20);border-radius:6px;
-  background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.82);
-  font-size:11.5px;cursor:pointer;font-family:inherit;
-  transition:background 0.2s;
-}
-.cam-toast button:hover{background:rgba(255,255,255,0.18)}
-
-/* ---- webcam preview ---- */
-#webcamPreview{
-  position:fixed;bottom:18px;right:18px;z-index:10;
-  width:130px;height:98px;border-radius:9px;
-  border:1px solid rgba(255,255,255,0.08);
-  object-fit:cover;opacity:0.50;
-  transform:scaleX(-1);display:none;
-  box-shadow:0 4px 16px rgba(0,0,0,0.35);
-}
 </style>
 </head>
 <body>
 
-<div class="info-hint" id="hint">✦ Drag to rotate &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Hand up/down to change view ✦</div>
-
-<!-- Camera toast -->
-<div class="cam-toast" id="camToast">
-  <span id="camToastMsg"></span><br>
-  <button id="camRetryBtn">Retry</button>
-</div>
+<div class="info-hint" id="hint">✦ Drag to rotate &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Q 切换形态 ✦</div>
 
 <!-- ===================================================================
      CONTROL PANEL
@@ -184,10 +138,17 @@ canvas{display:block}
 <div class="control-panel" id="controlPanel">
   <div class="panel-title"><span>◆</span>&nbsp; Particle Control</div>
 
+  <!-- Form 形态 -->
+  <div class="section-label">Form <span class="en">形态</span></div>
+  <div class="form-buttons" id="formButtons">
+    <button class="form-btn active" data-form="nebula">星云</button>
+    <button class="form-btn" data-form="cloud">云</button>
+  </div>
+
   <!-- Color Scheme -->
   <div class="section-label">Palette <span class="en">配色方案</span></div>
   <div class="scheme-buttons" id="schemeButtons">
-    <button class="scheme-btn active" data-scheme="neon">Neon</button>
+    <button class="scheme-btn active" data-scheme="deepspace">Deep Space</button>
     <button class="scheme-btn" data-scheme="nebula">Nebula</button>
     <button class="scheme-btn" data-scheme="ocean">Ocean</button>
     <button class="scheme-btn" data-scheme="sunset">Sunset</button>
@@ -209,10 +170,6 @@ canvas{display:block}
   <div class="section-label">Size <span class="en">粒子大小</span> <span class="val" id="sizeVal">100%</span></div>
   <input type="range" class="ctrl-slider" id="sizeSlider" min="0.35" max="2.0" value="1.0" step="0.01">
 
-  <!-- Gesture Camera Sensitivity -->
-  <div class="section-label">Gest Sens <span class="en">手势灵敏度</span> <span class="val" id="gestVal">1.00</span></div>
-  <input type="range" class="ctrl-slider" id="gestSlider" min="0.3" max="2.5" value="1.0" step="0.01">
-
   <!-- Rotation Flow Speed -->
   <div class="section-label">Flow <span class="en">旋转流速</span> <span class="val" id="flowVal">1.00</span></div>
   <input type="range" class="ctrl-slider" id="flowSlider" min="0" max="3.0" value="1.0" step="0.01">
@@ -224,19 +181,7 @@ canvas{display:block}
   <!-- Bloom Strength -->
   <div class="section-label">Bloom <span class="en">辉光强度</span> <span class="val" id="bloomVal">1.10</span></div>
   <input type="range" class="ctrl-slider" id="bloomSlider" min="0.4" max="2.2" value="1.10" step="0.01">
-
-  <!-- Gesture Status -->
-  <div class="gesture-row">
-    <span class="gesture-badge off" id="gestureBadge"></span>
-    <span id="gestureLabel">Camera starting…</span>
-  </div>
 </div>
-
-<!-- Webcam -->
-<video id="webcamPreview" autoplay playsinline muted></video>
-
-<!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm" crossorigin="anonymous"></script>
 
 <!-- Three.js import map -->
 <script type="importmap">
@@ -276,16 +221,13 @@ const BROWNIAN_AMPLITUDE   = 0.018;   // 布朗运动振幅
 const BROWNIAN_SPEED       = 0.03;    // 布朗运动相位变化速率
 const FLOW_SPEED_BASE      = 0.12;    // 旋转基础流速 (rad/s at r=1)
 
-// -- 手势相机控制 --
-const PALM_SMOOTHING        = 0.12;    // 手部坐标缓动系数
-const CAM_SMOOTHING         = 0.04;    // 相机位置缓动系数
-const DETECTION_INTERVAL    = 3;       // 每 N 帧检测一次手势
-const CAM_Y_MIN             = -4.0;    // 相机最低高度
-const CAM_Y_MAX             = 9.0;     // 相机最高高度
-const CAM_Z_NEAR            = 7.0;     // 手低时相机最近
-const CAM_Z_FAR             = 17.0;    // 手高时相机最远
-const CAM_Y_DEFAULT         = 5.5;     // 默认相机高度
-const CAM_Z_DEFAULT         = 13.0;    // 默认相机距离
+// -- 形态二：无定形不规则云（弱中心聚集、边界模糊、粒子持续漂移游走） --
+const CLOUD_PARTICLE_COUNT = 8000;    // 粒子总数（减半，更稀疏）
+const CLOUD_DRIFT_SPEED    = 0.5;     // 漂移峰值速度 (units/s)
+const CLOUD_DRIFT_TURN     = 0.7;     // 漂移方向缓慢转向速率 (rad/s)
+const CLOUD_SOFT_RADIUS    = 9.0;     // 软约束半径（超出后缓慢拉回云内）
+const CLOUD_SPRING_K       = 1.0;     // 软弹簧回拉系数
+const CLOUD_REF            = 10.0;    // 着色归一化参考半径
 
 // -- 辉光 --
 const BLOOM_STRENGTH_DEF   = 1.10;
@@ -308,13 +250,13 @@ const DRIFT_RADIUS_MAX  = RING3_RADIUS + RING_WIDTH/2 + 2.0;
  * =====================================================================
  */
 let userSizeScale    = 1.0;
-let userGestScale    = 1.0;
 let userFlowScale    = 1.0;
 let userRingThick    = 1.0; // kept for future use
 let userBloom        = BLOOM_STRENGTH_DEF;
-let currentScheme    = 'neon';
+let currentScheme    = 'deepspace';
 let currentTint      = 'none';
 let currentTintHue   = null;
+let currentForm      = 'nebula';   // 'nebula' 星云(一型) | 'cloud' 无定形云(二型)
 
 // ==================== SCENE SETUP ====================
 
@@ -327,8 +269,8 @@ renderer.toneMappingExposure = 1.08;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#14101e'); // 微提亮黑紫底色
-scene.fog = new THREE.FogExp2(0x14101e, 0.00006);
+scene.background = new THREE.Color('#0a0816'); // 更深邃的黑蓝紫底色
+scene.fog = new THREE.FogExp2(0x0a0816, 0.00007);
 
 const camera = new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,100);
 camera.position.set(0,1.8,15);
@@ -339,8 +281,6 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.minDistance = 5;
 controls.maxDistance = 30;
-controls.autoRotate = true;
-controls.autoRotateSpeed = 0.25;
 controls.target.set(0,0,0);
 controls.update();
 
@@ -375,76 +315,82 @@ const glowTex = createGlowTex();
 // 每个粒子按半径概率 + 独立大抖动着色，任意局部 ≥3 种色相
 
 const COLOR_SCHEMES = {
-  // 每套含 10 个色锚: 暖金(0-2) / 红粉玫红(3-6) / 绿青蓝(7-9)
-  neon: {
+  // 每套含 10 个色锚: 暖金星点(0-2) / 冷色星云主体(3-6) / 冰青点缀(7-8) / 红色点缀(9)
+  deepspace: { // ★ 深邃深空 (default) — 深蓝紫星云 + 银青 + 稀疏暖金星光 + 暗红点缀
     colors: [
-      [0.14,0.86,0.58], [0.12,0.80,0.52], [0.10,0.74,0.48],           // 暖金/橙 (3个)
-      [0.95,0.78,0.55], [0.92,0.70,0.55], [0.88,0.62,0.54], [0.78,0.52,0.58], // 红粉玫红 (4个)
-      [0.42,0.55,0.50], [0.55,0.62,0.56], [0.60,0.50,0.52],           // 绿/青/湖蓝 (3个)
+      [0.11,0.28,0.80], [0.09,0.24,0.86], [0.13,0.32,0.74],           // 暖金星点 (3个)
+      [0.64,0.55,0.40], [0.70,0.52,0.36], [0.66,0.60,0.44], [0.74,0.48,0.33], // 深蓝/靛蓝/蓝紫 (4个)
+      [0.55,0.42,0.52], [0.52,0.36,0.58],                             // 冰青/银青 (2个)
+      [0.99,0.52,0.42],                                               // 暗红点缀 (1个)
     ],
   },
-  nebula: {
+  nebula: { // 紫罗兰星云 — 品红紫 + 蓝紫 + 粉紫暖星
     colors: [
-      [0.13,0.84,0.56], [0.11,0.78,0.50], [0.09,0.72,0.48],
-      [0.95,0.74,0.55], [0.90,0.66,0.55], [0.86,0.58,0.54], [0.78,0.48,0.58],
-      [0.38,0.52,0.50], [0.55,0.60,0.55], [0.60,0.48,0.52],
+      [0.95,0.30,0.82], [0.92,0.26,0.86], [0.98,0.34,0.78],
+      [0.78,0.50,0.42], [0.82,0.48,0.38], [0.76,0.55,0.45], [0.85,0.45,0.35],
+      [0.62,0.40,0.55], [0.60,0.35,0.58],
+      [0.94,0.58,0.45],
     ],
   },
-  ocean: {
+  ocean: { // 深海青碧 — 深青蓝 + 冰青 + 微弱暖星
     colors: [
-      [0.56,0.76,0.52], [0.54,0.70,0.48], [0.52,0.64,0.45],
-      [0.62,0.56,0.52], [0.65,0.48,0.55], [0.68,0.40,0.56], [0.72,0.32,0.58],
-      [0.38,0.50,0.48], [0.52,0.58,0.55], [0.58,0.48,0.52],
+      [0.14,0.28,0.82], [0.12,0.24,0.86], [0.16,0.30,0.78],
+      [0.58,0.52,0.40], [0.60,0.48,0.36], [0.56,0.56,0.44], [0.62,0.44,0.33],
+      [0.50,0.42,0.55], [0.48,0.38,0.58],
+      [0.99,0.50,0.42],
     ],
   },
-  sunset: {
+  sunset: { // 余晖黄昏 — 暗琥珀 + 深橙红 + 暮色青
     colors: [
-      [0.12,0.88,0.58], [0.10,0.80,0.52], [0.08,0.74,0.48],
-      [0.98,0.76,0.55], [0.95,0.68,0.56], [0.92,0.60,0.54], [0.04,0.50,0.55],
-      [0.38,0.48,0.48], [0.88,0.30,0.58], [0.82,0.22,0.64],
+      [0.08,0.45,0.78], [0.06,0.42,0.82], [0.10,0.48,0.74],
+      [0.02,0.55,0.42], [0.05,0.50,0.38], [0.00,0.60,0.44], [0.03,0.48,0.35],
+      [0.55,0.40,0.50], [0.52,0.36,0.54],
+      [0.00,0.62,0.42],
     ],
   },
-  default: {
+  default: { // 经典银白星空 — 蓝银 + 银青 + 暖白
     colors: [
-      [0.14,0.80,0.58], [0.12,0.74,0.52], [0.10,0.68,0.48],
-      [0.93,0.72,0.55], [0.90,0.64,0.55], [0.86,0.56,0.54], [0.78,0.46,0.58],
-      [0.40,0.50,0.50], [0.56,0.56,0.55], [0.59,0.48,0.52],
+      [0.12,0.25,0.84], [0.10,0.22,0.88], [0.14,0.28,0.80],
+      [0.62,0.45,0.44], [0.66,0.42,0.40], [0.60,0.50,0.48], [0.70,0.40,0.36],
+      [0.57,0.35,0.58], [0.54,0.32,0.60],
+      [0.99,0.48,0.42],
     ],
   },
 };
 
 const TINT_HUES = {none:null, magenta:0.88, cyan:0.54, gold:0.12, purple:0.76, green:0.38};
 
-// 半径→3族高斯权重→族内随机选色锚→逐粒子大抖动 (≥3色相保证)
+// 冷色星云主体(约80%) + 稀疏暖金星点(约12%) + 少量暗红点缀(约7%)，整体压低亮度营造深邃星空
 function pickParticleColor(rNorm, scheme){
-  // 3族权重均衡：暖金/红粉/青蓝 各 ~1/3，保底均等
-  const warmW = Math.max(0.12, Math.exp(-rNorm*rNorm*5.5) * 0.22 + 0.12);
-  const roseW = Math.max(0.12, Math.exp(-Math.pow(rNorm-0.42,2)*7.0) * 0.22 + 0.12);
-  const coolW = Math.max(0.12, Math.exp(-Math.pow(rNorm-0.78,2)*5.0) * 0.22 + 0.12);
-  const sumW = warmW + roseW + coolW;
-  const roll = Math.random() * sumW;
-
-  let h, s, l;
   const cs = scheme.colors;
+  let h, s, l;
+  const roll = Math.random();
 
-  if(roll < warmW){
-    // 暖色族：金/橙 (色锚 0-2, 3个)
-    const i = Math.floor(Math.random() * 3);
+  if(roll < 0.12 - 0.04 * rNorm){
+    // 稀疏暖金星点：概率随半径略降，高亮散布作恒星
+    const i = Math.floor(Math.random() * 3);          // 暖星锚 0-2
     [h,s,l] = cs[i];
-  }else if(roll < warmW + roseW){
-    // 玫红族：红/粉红/玫红 (色锚 3-6, 4个)
-    const i = 3 + Math.floor(Math.random() * 4);
-    [h,s,l] = cs[i];
+    l = Math.min(0.96, l + Math.random() * 0.18);     // 高亮星光
+    s = Math.max(0.08, Math.min(0.70, s + (Math.random() - 0.5) * 0.15));
+  }else if(roll < 0.19 - 0.04 * rNorm){
+    // 少量暗红点缀：低饱和偏暗的红，如遥远红巨星，不喧宾夺主
+    [h,s,l] = cs[9];                                   // 红锚 9
+    l = Math.max(0.16, Math.min(0.66, l + (Math.random() - 0.5) * 0.18));
+    s = Math.max(0.18, Math.min(0.78, s + (Math.random() - 0.5) * 0.16));
   }else{
-    // 青蓝族：绿/青/湖蓝 (色锚 7-9, 3个)
-    const i = 7 + Math.floor(Math.random() * 3);
-    [h,s,l] = cs[i];
+    // 冷色星云主体：蓝紫/靛蓝为主，冰青点缀，压低亮度 → 深邃
+    if(Math.random() < 0.72){
+      const i = 3 + Math.floor(Math.random() * 4);    // 冷主体 3-6
+      [h,s,l] = cs[i];
+    }else{
+      const i = 7 + Math.floor(Math.random() * 2);    // 冰青点缀 7-8
+      [h,s,l] = cs[i];
+    }
+    l = Math.max(0.15, Math.min(0.72, l + (Math.random() - 0.5) * 0.26));
+    s = Math.max(0.12, Math.min(0.85, s + (Math.random() - 0.5) * 0.22));
   }
 
-  // ★ 逐粒子独立大抖动 — 相邻粒子绝不重复
-  h += (Math.random() - 0.5) * 0.16;
-  s  = Math.max(0.12, Math.min(1.0, s + (Math.random() - 0.5) * 0.28));
-  l  = Math.max(0.24, Math.min(0.94, l + (Math.random() - 0.5) * 0.20));
+  h += (Math.random() - 0.5) * 0.09;
 
   // tint 偏移
   if(currentTintHue !== null){
@@ -454,6 +400,31 @@ function pickParticleColor(rNorm, scheme){
   h = ((h % 1) + 1) % 1;
 
   return new THREE.Color().setHSL(h, s, l);
+}
+
+// 统一重着色（换配色 / 快速选色时复用），自动区分星云与立方体的半径归一化参考
+function recolorLayer(layer, scheme){
+  if(layer.isDrift)return;
+  const colAttr=layer.geometry.attributes.color;const colArr=colAttr.array;
+  const ref=layer.isCloud?CLOUD_REF:MAX_RADIUS_REF;
+  for(let i=0;i<layer.count;i++){
+    const r=layer.radii?layer.radii[i]:0;
+    const rNorm=Math.min(1,r/ref);
+    const c=pickParticleColor(rNorm,scheme);
+    colArr[i*3]=Math.min(1,c.r*layer.brightness);
+    colArr[i*3+1]=Math.min(1,c.g*layer.brightness);
+    colArr[i*3+2]=Math.min(1,c.b*layer.brightness);
+  }
+  colAttr.needsUpdate=true;
+  if(layer.flickSaved)layer.flickSaved.set(colArr);
+}
+
+// 标准正态分布采样（Box-Muller），用于无定形云的多高斯斑块
+function gauss(){
+  let u=0,v=0;
+  while(u===0)u=Math.random();
+  while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
 // ==================== BUILD PARTICLES：中心球体 + 三重环带 ====================
@@ -468,6 +439,10 @@ const layerDefs = [
 const layers = [];
 const particleGroup = new THREE.Group();
 scene.add(particleGroup);
+
+const cloudGroup = new THREE.Group();   // 二型：无定形云粒子
+cloudGroup.visible = false;
+scene.add(cloudGroup);
 
 const allParts = [];
 for(const def of layerDefs){
@@ -550,7 +525,7 @@ for(const def of layerDefs){
     initThetas, radii,
     flickTimers, flickSaved,
     baseSize:def.baseSize, brightness:def.brightness,
-    schemeKey:def.schemeKey, count,
+    schemeKey:def.schemeKey, count, form:'nebula',
   });
 }
 
@@ -563,7 +538,7 @@ for(const def of layerDefs){
     const r=DRIFT_RADIUS_MIN+Math.random()*(DRIFT_RADIUS_MAX-DRIFT_RADIUS_MIN);
     const z=(Math.random()-0.5)*2*RING3_HALF_HEIGHT*3.5;
     posArr[i*3]=r*Math.cos(theta);posArr[i*3+1]=z;posArr[i*3+2]=r*Math.sin(theta);
-    const c=new THREE.Color().setHSL(0.56+Math.random()*0.08,0.3,0.65+Math.random()*0.25);
+    const c=new THREE.Color().setHSL(0.58+Math.random()*0.08,0.30,0.40+Math.random()*0.18);
     colArr[i*3]=c.r;colArr[i*3+1]=c.g;colArr[i*3+2]=c.b;
   }
   const geo=new THREE.BufferGeometry();
@@ -581,104 +556,65 @@ for(const def of layerDefs){
     origPositions:new Float32Array(posArr), phases:new Float32Array(count*3),
     displacement:new Float32Array(count*3),
     initThetas:null, radii:null, flickTimers:null, flickSaved:null,
-    baseSize:0.12, brightness:1.0, schemeKey:'ring3', count, isDrift:true,
+    baseSize:0.12, brightness:1.0, schemeKey:'ring3', count, isDrift:true, form:'nebula',
   });
   const dp=layers[layers.length-1].phases;
   for(let i=0;i<count*3;i++)dp[i]=Math.random()*Math.PI*2;
 })();
 
-// ==================== HAND TRACKING STATE ====================
-
-const handState = {
-  detected: false,
-  palmNormY: 0.5,          // 手部归一化 Y (0=顶部,1=底部)
-  targetPalmNormY: 0.5,    // 目标值 (smoothed)
-};
-let camTargetY = CAM_Y_DEFAULT;
-let camTargetZ = CAM_Z_DEFAULT;
-
-// UI refs
-const gestureBadge  = document.getElementById('gestureBadge');
-const gestureLabel  = document.getElementById('gestureLabel');
-const webcamVideo   = document.getElementById('webcamPreview');
-const camToast      = document.getElementById('camToast');
-const camToastMsg   = document.getElementById('camToastMsg');
-
-function setGestureUI(state){
-  gestureBadge.className='gesture-badge '+state;
-  const m={tracking:'Hand active — move to view',lost:'No hand detected',error:'Camera error',off:'Camera off'};
-  gestureLabel.textContent=m[state]||'';
-}
-function showCamToast(msg,showRetry){
-  camToastMsg.textContent=msg;
-  document.getElementById('camRetryBtn').style.display=showRetry?'':'none';
-  camToast.style.display='block';
-  clearTimeout(camToast._t);
-  camToast._t=setTimeout(()=>{camToast.style.display='none'},9000);
-}
-document.getElementById('camRetryBtn').addEventListener('click',()=>{
-  camToast.style.display='none';initHandTracking();
-});
-
-// ==================== CAMERA + MEDIAPIPE INIT ====================
-
-let handLandmarker=null, videoReady=false, detectionFrameCount=0;
-
-function hasCameraDevice(){
-  return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
-}
-
-async function initHandTracking(){
-  try{
-    if(!hasCameraDevice()){
-      showCamToast('No camera API available. Running in particle-only mode.',false);
-      setGestureUI('off');gestureLabel.textContent='No camera';return;
-    }
-    setGestureUI('off');gestureLabel.textContent='Requesting camera…';
-    let stream;
-    try{
-      stream=await navigator.mediaDevices.getUserMedia({
-        video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false
-      });
-    }catch(e){
-      const msg=e.name==='NotAllowedError'
-        ?'Camera permission denied. Click the lock icon in the address bar to enable it.'
-        :e.name==='NotFoundError'
-        ?'No camera detected. Connect a camera and retry.'
-        :`Camera error: ${e.message}`;
-      showCamToast(msg,true);
-      setGestureUI('error');gestureLabel.textContent='Camera unavailable';return;
-    }
-    webcamVideo.srcObject=stream;
-    await webcamVideo.play();
-    await new Promise(r=>webcamVideo.addEventListener('loadedmetadata',r,{once:true}));
-    videoReady=true;webcamVideo.style.display='block';
-
-    gestureLabel.textContent='Loading model…';
-    if(typeof FilesetResolver==='undefined'){
-      throw new Error('MediaPipe library not loaded (CDN unreachable or file:// protocol). Use http:// instead.');
-    }
-    const vision=await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm');
-    handLandmarker=await HandLandmarker.createFromOptions(vision,{
-      baseOptions:{
-        modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
-        delegate:'GPU'},
-      runningMode:'VIDEO',numHands:1,
-    });
-    camToast.style.display='none';
-    setGestureUI('lost');gestureLabel.textContent='Show your palm 👋';
-  }catch(e){
-    setGestureUI('error');gestureLabel.textContent='Init failed';
-    showCamToast('Gesture model failed to load. Running in particle-only mode.',true);
-    if(webcamVideo.srcObject){webcamVideo.srcObject.getTracks().forEach(t=>t.stop());webcamVideo.srcObject=null;}
-    webcamVideo.style.display='none';videoReady=false;handLandmarker=null;
+// ==================== BUILD PARTICLES：二型 无定形不规则云（多高斯斑块融合） ====================
+(function createCloudParticles(){
+  const count = CLOUD_PARTICLE_COUNT;
+  // 多个高斯斑块叠加，形成轮廓不规则、边界模糊的无定形云
+  const BLOB_COUNT = 6;
+  const bcx=new Float32Array(BLOB_COUNT), bcy=new Float32Array(BLOB_COUNT), bcz=new Float32Array(BLOB_COUNT);
+  const bsigma=new Float32Array(BLOB_COUNT);
+  for(let b=0;b<BLOB_COUNT;b++){
+    const theta=Math.random()*Math.PI*2;
+    const phi=Math.acos(2*Math.random()-1);
+    const rr=2.6*Math.sqrt(Math.random());
+    bcx[b]=rr*Math.sin(phi)*Math.cos(theta);
+    bcy[b]=rr*Math.sin(phi)*Math.sin(theta);
+    bcz[b]=rr*Math.cos(phi);
+    bsigma[b]=2.0+Math.random()*1.4;
   }
-}
-initHandTracking();
+  const posArr = new Float32Array(count*3);
+  const colArr = new Float32Array(count*3);
+  const radii  = new Float32Array(count);
+  for(let i=0;i<count;i++){
+    const b=Math.floor(Math.random()*BLOB_COUNT);
+    const x=bcx[b]+gauss()*bsigma[b];
+    const y=bcy[b]+gauss()*bsigma[b];
+    const z=bcz[b]+gauss()*bsigma[b];
+    posArr[i*3]=x; posArr[i*3+1]=y; posArr[i*3+2]=z;
+    radii[i]=Math.sqrt(x*x+y*y+z*z);
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+  const mat=new THREE.PointsMaterial({
+    size:0.22,map:glowTex,vertexColors:true,
+    blending:THREE.AdditiveBlending,depthWrite:false,depthTest:true,
+    transparent:true,opacity:0.85,
+  });
+  const pts=new THREE.Points(geo,mat);
+  cloudGroup.add(pts);
 
-// ---- hand detection helpers ----
-function getPalmCenter(lm){const ix=[0,5,9,13,17];let cx=0,cy=0,cz=0;for(const i of ix){cx+=lm[i].x;cy+=lm[i].y;cz+=lm[i].z;}return{x:cx/ix.length,y:cy/ix.length,z:cz/ix.length};}
+  const layer={
+    name:'cloud',form:'cloud',isCloud:true,
+    points:pts,geometry:geo,material:mat,
+    origPositions:new Float32Array(posArr),
+    phases:new Float32Array(count*3),
+    displacement:new Float32Array(count*3),
+    initThetas:null,radii,flickTimers:null,flickSaved:null,
+    baseSize:0.22,brightness:1.0,schemeKey:'cloud',count,
+    isDrift:false,
+  };
+  for(let i=0;i<count*3;i++)layer.phases[i]=Math.random()*Math.PI*2;
+  layers.push(layer);
+  recolorLayer(layer, COLOR_SCHEMES[currentScheme]);
+})();
+
 
 // ==================== ANIMATION LOOP ====================
 
@@ -696,55 +632,9 @@ function animate(){
   particleGroup.rotation.y += 0.0003;
   particleGroup.updateMatrixWorld();
 
-  // ---- Gesture detection (throttled) → 手部 Y 驱动相机高度 ----
-  detectionFrameCount++;
-  if(detectionFrameCount%DETECTION_INTERVAL===0&&handLandmarker&&videoReady&&webcamVideo.readyState>=2){
-    try{
-      const results=handLandmarker.detectForVideo(webcamVideo,performance.now());
-      if(results.landmarks&&results.landmarks.length>0){
-        const lm=results.landmarks[0];
-        const palm=getPalmCenter(lm);
-        // palm.y: 0=图像顶部, 1=图像底部 → 手高=值小, 手低=值大
-        handState.targetPalmNormY = palm.y;
-        if(!handState.detected){
-          handState.palmNormY = palm.y;
-          handState.detected = true;
-        }
-        setGestureUI('tracking');
-      }else{
-        if(handState.detected){
-          handState.detected = false;
-          setGestureUI('lost');
-          // 手离开后逐渐回到默认视角
-          camTargetY = CAM_Y_DEFAULT;
-          camTargetZ = CAM_Z_DEFAULT;
-        }
-      }
-    }catch(e){}
-  }
-
-  // ---- 手部 Y 缓动 ----
-  if(handState.detected){
-    handState.palmNormY += (handState.targetPalmNormY - handState.palmNormY) * PALM_SMOOTHING;
-    // 手高→相机高(远), 手低→相机低(近), userGestScale 调节幅度
-    // palmNormY=0 (top) → camTargetY=9, camTargetZ=17  (默认 × gesScale)
-    // palmNormY=1 (bottom) → camTargetY=-4, camTargetZ=7
-    const gs = userGestScale;
-    const yMid = CAM_Y_DEFAULT;
-    const zMid = CAM_Z_DEFAULT;
-    const yRange = CAM_Y_MAX - CAM_Y_MIN; // 13
-    const zRange = CAM_Z_FAR - CAM_Z_NEAR; // 10
-    camTargetY = yMid + (0.5 - handState.palmNormY) * yRange * gs;
-    camTargetZ = zMid + (0.5 - handState.palmNormY) * zRange * gs;
-  }
-
-  // ---- 相机缓动 ----
-  camera.position.y += (camTargetY - camera.position.y) * CAM_SMOOTHING;
-  camera.position.z += (camTargetZ - camera.position.z) * CAM_SMOOTHING;
-  controls.target.set(0, 0, 0);
-
   // ---- Per-layer particle update (布朗运动 + 闪烁, 无斥力) ----
   for(const layer of layers){
+    if(layer.form!==currentForm)continue;
     const posAttr=layer.geometry.attributes.position;
     const colAttr=layer.geometry.attributes.color;
     const posArr=posAttr.array;const colArr=colAttr?colAttr.array:null;
@@ -756,6 +646,23 @@ function animate(){
     let colDirty=false;
     for(let i=0;i<n;i++){
       const i3=i*3;
+
+      // -- 二型：持续漂移游走（方向缓慢转向 + 软边界拉回，无硬边） --
+      if(layer.isCloud){
+        phases[i3]  +=(Math.random()-0.5)*CLOUD_DRIFT_TURN*dt;
+        phases[i3+1]+=(Math.random()-0.5)*CLOUD_DRIFT_TURN*dt;
+        phases[i3+2]+=(Math.random()-0.5)*CLOUD_DRIFT_TURN*dt;
+        let nx=posArr[i3]  +Math.sin(phases[i3])  *CLOUD_DRIFT_SPEED*dt;
+        let ny=posArr[i3+1]+Math.sin(phases[i3+1])*CLOUD_DRIFT_SPEED*dt;
+        let nz=posArr[i3+2]+Math.sin(phases[i3+2])*CLOUD_DRIFT_SPEED*dt;
+        const r=Math.hypot(nx,ny,nz);
+        if(r>CLOUD_SOFT_RADIUS){
+          const f=Math.max(0, 1 - CLOUD_SPRING_K*dt*(r-CLOUD_SOFT_RADIUS)/r);
+          nx*=f; ny*=f; nz*=f;
+        }
+        posArr[i3]=nx; posArr[i3+1]=ny; posArr[i3+2]=nz;
+        continue;
+      }
 
       // -- Brownian --
       phases[i3]+=(Math.random()-0.5)*BROWNIAN_SPEED*dt60;
@@ -791,6 +698,7 @@ function animate(){
   if(userFlowScale>0.001){
     const baseSpeed=FLOW_SPEED_BASE*userFlowScale*dt60*0.016;
     for(const layer of layers){
+      if(layer.form!=='nebula')continue;
       if(layer.isDrift){layer.points.rotation.y+=baseSpeed*0.4;continue;}
       // sphere rotates fastest, ring3 slowest (like real galaxy)
       const speedMod=layer.name==='sphere'?1.6:layer.name==='ring1'?1.2:layer.name==='ring2'?0.75:0.40;
@@ -815,23 +723,24 @@ function switchColorScheme(schemeKey){
   if(!COLOR_SCHEMES[schemeKey]||schemeKey===currentScheme)return;
   currentScheme=schemeKey;
   const scheme=COLOR_SCHEMES[schemeKey];
-  for(const layer of layers){
-    if(layer.isDrift)continue;
-    const colAttr=layer.geometry.attributes.color;const colArr=colAttr.array;
-    for(let i=0;i<layer.count;i++){
-      const r=layer.radii?layer.radii[i]:0;
-      const rNorm=Math.min(1,r/MAX_RADIUS_REF);
-      const c=pickParticleColor(rNorm,scheme);
-      colArr[i*3]=Math.min(1,c.r*layer.brightness);
-      colArr[i*3+1]=Math.min(1,c.g*layer.brightness);
-      colArr[i*3+2]=Math.min(1,c.b*layer.brightness);
-    }
-    colAttr.needsUpdate=true;
-    if(layer.flickSaved)layer.flickSaved.set(colArr);
-  }
+  for(const layer of layers)recolorLayer(layer,scheme);
   updateActiveSchemeBtn(schemeKey);
 }
 schemeBtns.forEach(b=>b.addEventListener('click',()=>{const s=b.dataset.scheme;if(s)switchColorScheme(s);}));
+
+// -- Form (形态) buttons --
+const formBtns=document.querySelectorAll('.form-btn');
+function updateActiveFormBtn(form){
+  formBtns.forEach(b=>b.classList.toggle('active',b.dataset.form===form));
+}
+function switchForm(form){
+  if(!['nebula','cloud'].includes(form)||form===currentForm)return;
+  currentForm=form;
+  particleGroup.visible=(form==='nebula');
+  cloudGroup.visible=(form==='cloud');
+  updateActiveFormBtn(form);
+}
+formBtns.forEach(b=>b.addEventListener('click',()=>switchForm(b.dataset.form)));
 
 // -- Color dots --
 const colorDots=document.querySelectorAll('.color-dot');
@@ -844,23 +753,8 @@ colorDots.forEach(d=>d.addEventListener('click',()=>{
   currentTint=tint;currentTintHue=TINT_HUES[tint];
   updateActiveDot(tint);
   // Re-apply current scheme (which will use the new tint)
-  switchColorScheme(currentScheme);
-  // Need to force re-color even if same scheme
   const scheme=COLOR_SCHEMES[currentScheme];
-  for(const layer of layers){
-    if(layer.isDrift)continue;
-    const colAttr=layer.geometry.attributes.color;const colArr=colAttr.array;
-    for(let i=0;i<layer.count;i++){
-      const r=layer.radii?layer.radii[i]:0;
-      const rNorm=Math.min(1,r/MAX_RADIUS_REF);
-      const c=pickParticleColor(rNorm,scheme);
-      colArr[i*3]=Math.min(1,c.r*layer.brightness);
-      colArr[i*3+1]=Math.min(1,c.g*layer.brightness);
-      colArr[i*3+2]=Math.min(1,c.b*layer.brightness);
-    }
-    colAttr.needsUpdate=true;
-    if(layer.flickSaved)layer.flickSaved.set(colArr);
-  }
+  for(const layer of layers)recolorLayer(layer,scheme);
 }));
 
 // -- Sliders --
@@ -869,12 +763,6 @@ const sizeVal=document.getElementById('sizeVal');
 sizeSlider.addEventListener('input',()=>{
   userSizeScale=parseFloat(sizeSlider.value);sizeVal.textContent=Math.round(userSizeScale*100)+'%';
   for(const layer of layers){if(!layer.isDrift)layer.material.size=layer.baseSize*userSizeScale;}
-});
-
-const gestSlider=document.getElementById('gestSlider');
-const gestVal=document.getElementById('gestVal');
-gestSlider.addEventListener('input',()=>{
-  userGestScale=parseFloat(gestSlider.value);gestVal.textContent=userGestScale.toFixed(2);
 });
 
 const flowSlider=document.getElementById('flowSlider');
@@ -899,7 +787,7 @@ bloomSlider.addEventListener('input',()=>{
 
 window.addEventListener('keydown',e=>{
   switch(e.key.toLowerCase()){
-    case'1':switchColorScheme('neon');break;
+    case'1':switchColorScheme('deepspace');break;
     case'2':switchColorScheme('nebula');break;
     case'3':switchColorScheme('ocean');break;
     case'4':switchColorScheme('sunset');break;
@@ -907,6 +795,7 @@ window.addEventListener('keydown',e=>{
     case'r':sizeSlider.value=1.0;sizeSlider.dispatchEvent(new Event('input'));break;
     case'f':flowSlider.value=userFlowScale<0.1?1.0:0;flowSlider.dispatchEvent(new Event('input'));break;
     case'b':bloomSlider.value=userBloom>0.8?0.5:BLOOM_STRENGTH_DEF;bloomSlider.dispatchEvent(new Event('input'));break;
+    case'q':switchForm(currentForm==='nebula'?'cloud':'nebula');break;
   }
 });
 
