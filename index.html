@@ -126,11 +126,71 @@ canvas{display:block}
 .ctrl-slider::-webkit-slider-thumb:hover{
   box-shadow:0 0 16px rgba(170,140,235,0.50);
 }
+
+/* ---- gesture status badge ---- */
+.gesture-status{
+  position:fixed;right:18px;bottom:150px;z-index:20;
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;letter-spacing:0.4px;color:rgba(255,255,255,0.5);
+  pointer-events:none;user-select:none;
+}
+.gesture-badge{
+  width:8px;height:8px;border-radius:50%;background:#555;flex:none;
+  transition:background 0.3s,box-shadow 0.3s;
+}
+.gesture-badge.tracking{background:#5f8;box-shadow:0 0 8px #5f8}
+.gesture-badge.lost    {background:#f84;box-shadow:0 0 6px #f84}
+.gesture-badge.error   {background:#f44;box-shadow:0 0 6px #f44;animation:pulse 1.2s infinite}
+.gesture-badge.off     {background:#555}
+@keyframes pulse{50%{opacity:0.35}}
+
+/* ---- webcam preview ---- */
+.webcam-wrap{
+  position:fixed;right:18px;bottom:18px;z-index:20;
+  width:150px;border-radius:12px;overflow:hidden;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(0,0,0,0.35);
+  box-shadow:0 6px 24px rgba(0,0,0,0.40);
+  opacity:0;transition:opacity 0.8s;pointer-events:none;
+}
+.webcam-wrap.on{opacity:0.85}
+.webcam-wrap video{width:100%;height:auto;display:block;transform:scaleX(-1);filter:saturate(0.75) contrast(1.05)}
+
+/* ---- camera permission toast ---- */
+.cam-toast{
+  position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:30;
+  background:rgba(20,12,32,0.92);
+  border:1px solid rgba(255,255,255,0.14);
+  border-radius:10px;padding:10px 16px;
+  font-size:12px;color:rgba(255,255,255,0.85);
+  display:none;max-width:72vw;text-align:center;
+  box-shadow:0 8px 30px rgba(0,0,0,0.50);
+}
+
+/* ---- gesture enable toggle ---- */
+.gesture-toggle{
+  width:100%;padding:8px 4px;border:1px solid rgba(255,255,255,0.16);border-radius:8px;
+  background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.65);
+  font-size:12px;cursor:pointer;transition:all 0.25s;
+  font-family:inherit;letter-spacing:0.5px;text-align:center;
+}
+.gesture-toggle:hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.32);color:#fff}
+.gesture-toggle.active{
+  background:linear-gradient(135deg,rgba(120,220,160,0.22),rgba(80,140,220,0.16));
+  border-color:rgba(120,220,170,0.55);color:#fff;box-shadow:0 0 12px rgba(110,220,160,0.22);
+}
 </style>
 </head>
 <body>
 
-<div class="info-hint" id="hint">✦ Drag to rotate &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Q 切换形态 ✦</div>
+<div class="info-hint" id="hint">✦ Drag 旋转 | Scroll 缩放 | Q/按钮切换形态 | ✋ 序列1: 左右转·上下俯仰·前后推拉 · L锁俯仰 | M→序列2: 🖐张→放大·🤏合拢→缩小/云变十字·手掌位置→平移 ✦</div>
+
+<div class="gesture-status">
+  <span class="gesture-badge off" id="gestureBadge"></span>
+  <span id="gestureLabel">手势已关闭 · 面板开启</span>
+</div>
+<div class="webcam-wrap" id="webcamWrap"><video id="webcamVideo" autoplay playsinline muted></video></div>
+<div class="cam-toast" id="camToast"></div>
 
 <!-- ===================================================================
      CONTROL PANEL
@@ -143,6 +203,7 @@ canvas{display:block}
   <div class="form-buttons" id="formButtons">
     <button class="form-btn active" data-form="nebula">星云</button>
     <button class="form-btn" data-form="cloud">云</button>
+    <button class="form-btn" data-form="wind">风</button>
   </div>
 
   <!-- Color Scheme -->
@@ -181,6 +242,12 @@ canvas{display:block}
   <!-- Bloom Strength -->
   <div class="section-label">Bloom <span class="en">辉光强度</span> <span class="val" id="bloomVal">1.10</span></div>
   <input type="range" class="ctrl-slider" id="bloomSlider" min="0.4" max="2.2" value="1.10" step="0.01">
+
+  <!-- Gesture Toggle -->
+  <div class="section-label">Gestures <span class="en">手势控制</span></div>
+  <button class="gesture-toggle" id="gestToggle">开启手势</button>
+  <button class="gesture-toggle" id="gestLockBtn" disabled>锁定高度 (L)</button>
+  <button class="gesture-toggle" id="seqBtn" disabled>序列1</button>
 </div>
 
 <!-- Three.js import map -->
@@ -191,15 +258,380 @@ canvas{display:block}
 }}
 </script>
 
+<!-- MediaPipe 资源已全部本地化（mediapipe/ 目录），不依赖外网 CDN -->
+<!-- 库文件用 ESM 方式在下方 import，wasm 与模型走相对路径 -->
+
 <!-- ===================================================================
      MAIN SCRIPT
      =================================================================== -->
 <script type="module">
 import * as THREE from 'three';
+import {FilesetResolver, HandLandmarker} from './mediapipe/vision_bundle.mjs';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
 import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ==================== 手势相机控制 (MediaPipe Hands) ====================
+const GEST_WASM   = './mediapipe/wasm';
+const GEST_MODEL  = './mediapipe/hand_landmarker.task';
+const GEST_ROT_SPEED = 3.2;      // 左右满幅时的旋转速度 (rad/s)：手越靠边转得越快
+const PITCH_SPEED     = 3.0;      // 上下满幅俯仰速度 (rad/s)：手在上→俯仰加大+拉近（探头式）
+const PITCH_MIN       = 0.15;     // 最小俯仰角（≈8°，近水平）
+const PITCH_MAX       = 1.35;     // 最大俯仰角（≈77°，极俯瞰）
+const PITCH_DIST_NEAR = 0.85;     // 俯仰最大时距离缩放（拉近看细节）
+const PITCH_DIST_FAR  = 1.15;     // 俯仰最小时距离缩放（推远看全局）
+const GEST_ROT_SMOOTH= 0.18;     // 旋转速度缓动系数（更跟手）
+const GEST_X_DEAD    = 0.02;     // 横向死区（防抖，几乎全行程生效）
+const GEST_Y_DEAD    = 0.02;     // 纵向死区（防抖，几乎全行程生效）
+const HOME_RECOVER_SMOOTH=0.06;  // 手离开画面后视角恢复默认的缓动系数
+const HOME_CAM_POS   = new THREE.Vector3(0,15.6,9);    // 默认视角：斜上方 60° 俯瞰（距离≈18，更高更远）
+const WIND_COUNT     = 9000;     // 粒子风粒子数
+const WIND_SPHERE_R  = 7.2;      // 风球半径（粒子绕球表面流转）
+const WIND_SHELL     = 0.8;      // 球壳厚度 ±（分布轻微起伏）
+const WIND_SPEED     = 1.2;      // 满幅风速 (rad/s 角速度)：手越靠边风越大
+const PAN_RANGE      = 8;        // 手位置平移范围（+/- 世界单位，序列2：手掌向上/下/左/右 → 粒子整体平移）
+const ZOOM_SPEED     = 0.08;     // 变焦缓动系数（序列2：张开→放大，合拢→缩小）
+const PAN_SPEED      = 0.10;     // 平移缓动系数
+const GATHER_SPEED   = 0.08;     // 云十字聚集缓动系数
+const GATHER_TRIG_ON = 0.14;     // 指尖分散度低于此值触发聚集十字（正常张掌≈0.22 不触发）
+const CROSS_HALF     = 4.6;      // 云十字四端到中心距离
+const CROSS_THICK    = 0.7;      // 云十字梁粗/端团厚度
+const GEST_DETECT_INTERVAL = 2;  // 隔几帧检测一次（降低算力）
+const CAM_DIST_MIN   = 5.5;      // 手势推拉最近距离
+const CAM_DIST_MAX   = 28;       // 手势推拉最远距离
+const CAM_ZOOM_SMOOTH= 0.08;     // 推拉缓动系数
+const CAM_SIZE_DEAD  = 0.06;     // 手尺寸死区（防抖）
+
+let handLandmarker = null;
+let videoReady     = false;
+let detectCount    = 0;
+const handState = {
+  detected:false,   // 当前是否检测到手
+  targetRotVel:0,   // 目标旋转速度 (rad/s) — 绕 Y 轴（左右）
+  rotVel:0,         // 缓动后的旋转速度 (Y)
+  targetPitchVel:0, // 目标俯仰速度 (rad/s) — 上下（探头式：俯仰+距离联动）
+  pitchVel:0,       // 缓动后的俯仰速度
+  pitch:1.05,       // 当前俯仰角 (rad)，默认约60°（HOME_CAM_POS 俯仰角）
+  targetWindVel:0,  // 目标风速 (units/s) — 粒子风形态（左右）
+  windVel:0,        // 缓动后的风速
+  zoomLevel:0.5,    // 变焦级别 0~1（序列2：张开→放大/近，合拢→缩小/远）
+  panX:0,panY:0,    // 二维平移偏移（手掌位置→粒子整体平移）
+  targetGather:0,   // 目标聚集度 0~1（云→十字型）
+  gather:0,         // 缓动聚集度
+  targetDist:null,  // 目标相机距离
+  sizeRef:null,     // 基准手尺寸（首次检测记录）
+  baseDist:null,    // 基准相机距离（首次检测记录）
+};
+
+function getPalmCenter(lm){
+  const ix=[0,5,9,13,17];let cx=0,cy=0,cz=0;
+  for(const i of ix){cx+=lm[i].x;cy+=lm[i].y;cz+=lm[i].z;}
+  return{x:cx/ix.length,y:cy/ix.length,z:cz/ix.length};
+}
+// 手在画面中的包围盒尺寸（手越大 = 离摄像头越近，作推拉的距离代理）
+function getHandSize(lm){
+  let minX=1,maxX=0,minY=1,maxY=0;
+  for(const p of lm){
+    if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
+    if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+  }
+  return Math.max(maxX-minX,maxY-minY);
+}
+// 合拢度检测（序列2）：指尖分散度 spread + 手指伸直度 ext
+// 手心合拢 = 五指并拢且伸直（spread 小 + ext 大）；握拳 = 弯曲（ext 小）→ 区分开
+function getGatherScore(lm){
+  const tips=[8,12,16,20];
+  let spread=0,c=0;
+  for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){
+    spread+=Math.hypot(lm[tips[i]].x-lm[tips[j]].x,lm[tips[i]].y-lm[tips[j]].y,lm[tips[i]].z-lm[tips[j]].z);
+    c++;
+  }
+  spread/=c;
+  const FINGERS=[[8,5],[12,9],[16,13],[20,17]];
+  let ext=0;
+  for(const [tip,base] of FINGERS){
+    ext+=Math.hypot(lm[tip].x-lm[0].x,lm[tip].y-lm[0].y,lm[tip].z-lm[0].z)/Math.max(Math.hypot(lm[base].x-lm[0].x,lm[base].y-lm[0].y,lm[base].z-lm[0].z),1e-6);
+  }
+  return {spread:spread, ext:ext/4};
+}
+
+function setGestBadge(state){
+  const b=document.getElementById('gestureBadge');
+  if(b)b.className='gesture-badge '+state;
+}
+function setGestureLabel(t){
+  const l=document.getElementById('gestureLabel');
+  if(l)l.textContent=t;
+}
+function showCamToast(msg,isError){
+  const t=document.getElementById('camToast');
+  if(!t)return;
+  t.textContent=msg;
+  t.style.borderColor=isError?'rgba(255,90,90,0.55)':'rgba(255,255,255,0.14)';
+  t.style.display='block';
+  clearTimeout(showCamToast._t);
+  showCamToast._t=setTimeout(()=>{t.style.display='none';},5000);
+}
+
+const webcamVideo=document.getElementById('webcamVideo');
+const gestToggleBtn=document.getElementById('gestToggle');
+let gestEnabled=false;
+
+function updateGestToggleUI(){
+  if(!gestToggleBtn)return;
+  gestToggleBtn.textContent=gestEnabled?'关闭手势':'开启手势';
+  gestToggleBtn.classList.toggle('active',gestEnabled);
+}
+
+// 关闭手势：停止视频流、释放摄像头、复位控制状态
+function stopGesture(){
+  gestEnabled=false;
+  handState.detected=false;
+  gestLockH=false;
+  currentSeq=1;
+  updateSeqUI();
+  handState.targetRotVel=0;
+  handState.targetPitchVel=0;
+  handState.targetDist=null;
+  if(webcamVideo.srcObject){
+    webcamVideo.srcObject.getTracks().forEach(t=>t.stop());
+    webcamVideo.srcObject=null;
+  }
+  videoReady=false;handLandmarker=null;
+  const w=document.getElementById('webcamWrap');if(w)w.classList.remove('on');
+  setGestBadge('off');setGestureLabel('手势已关闭');
+  updateGestToggleUI();
+  updateGestLockUI();
+}
+
+// 视角高度锁定：锁定后上下手势不再改变视角高度（左右旋转/前后推拉照常），手可自由上下活动
+let gestLockH=false;
+const gestLockBtn=document.getElementById('gestLockBtn');
+function updateGestLockUI(){
+  if(!gestLockBtn)return;
+  gestLockBtn.textContent=gestLockH?'解锁高度 (L)':'锁定高度 (L)';
+  gestLockBtn.classList.toggle('active',gestLockH);
+  gestLockBtn.disabled=!gestEnabled;   // 手势未开启时不可锁定
+  if(seqBtn)seqBtn.disabled=!gestEnabled;
+}
+function toggleGestLockH(){
+  if(!gestEnabled)return;
+  gestLockH=!gestLockH;
+  setGestureLabel(gestLockH?'🔒 视角高度已锁定 · 左右前后仍可控制':'🙌 伸开手掌控制');
+  updateGestLockUI();
+}
+if(gestLockBtn)gestLockBtn.addEventListener('click',toggleGestLockH);
+// L 键快捷切换高度锁定（手在操作时无需再点按钮）
+window.addEventListener('keydown',e=>{
+  if(e.key==='l'||e.key==='L')toggleGestLockH();
+});
+
+// ===== 手势序列切换：序列1（旋转/高度/推拉/握拳） ⇄ 序列2（+手心合拢→粒子合拢+拉远） =====
+let currentSeq=1;
+let seqLabelT=null;
+const seqBtn=document.getElementById('seqBtn');
+function updateSeqUI(){
+  if(!seqBtn)return;
+  seqBtn.textContent='序列'+currentSeq;
+  seqBtn.classList.toggle('active',currentSeq===2);
+  seqBtn.disabled=!gestEnabled;
+}
+function toggleSeq(){
+  if(!gestEnabled)return;
+  currentSeq=currentSeq===1?2:1;
+  updateSeqUI();
+  setGestureLabel(currentSeq===1?'🙌 序列1：左右旋转·上下高度·前后推拉':'🖐 序列2：手掌张合→变焦  手掌位置→平移');
+  clearTimeout(seqLabelT);
+  seqLabelT=setTimeout(()=>setGestureLabel('🙌 伸开手掌控制'),1600);
+}
+if(seqBtn)seqBtn.addEventListener('click',toggleSeq);
+// M 键快捷切换序列
+window.addEventListener('keydown',e=>{
+  if(e.key==='m'||e.key==='M')toggleSeq();
+});
+
+// ===== 手势序列切换：序列1（旋转/高度/推拉） ⇄ 序列2（手心合拢→粒子合拢 + 挥动流动） =====
+
+// 开启手势：请求摄像头 + 加载模型（用户主动点击才触发，避免一打开页面就弹权限）
+async function startGesture(){
+  if(gestEnabled)return;
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){
+    showCamToast('当前环境无摄像头 API。',true);
+    setGestBadge('off');setGestureLabel('手势不可用');
+    return;
+  }
+  setGestBadge('off');setGestureLabel('请求摄像头…');
+  let stream;
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false
+    });
+  }catch(e){
+    const msg=e.name==='NotAllowedError'
+      ?'摄像头权限被拒绝：请点击地址栏锁形图标允许后重试。'
+      :e.name==='NotFoundError'
+      ?'未检测到摄像头。'
+      :'摄像头错误：'+e.message;
+    showCamToast(msg,true);
+    setGestBadge('error');setGestureLabel('手势不可用');
+    return;
+  }
+  webcamVideo.srcObject=stream;
+  await webcamVideo.play();
+  await new Promise(r=>webcamVideo.addEventListener('loadedmetadata',r,{once:true}));
+  videoReady=true;
+  const w=document.getElementById('webcamWrap');if(w)w.classList.add('on');
+  setGestureLabel('加载手势模型…');
+  try{
+    const vision=await FilesetResolver.forVisionTasks(GEST_WASM);
+    handLandmarker=await HandLandmarker.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:GEST_MODEL,delegate:'GPU'},
+      runningMode:'VIDEO',numHands:1,
+    });
+    gestEnabled=true;
+    setGestureLabel('🙌 伸开手掌控制');setGestBadge('lost');
+    updateGestLockUI();
+  }catch(e){
+    showCamToast('手势模型加载失败，请重试。',true);
+    setGestBadge('error');setGestureLabel('加载失败');
+    // 失败时释放已占用的摄像头
+    if(webcamVideo.srcObject){
+      webcamVideo.srcObject.getTracks().forEach(t=>t.stop());
+      webcamVideo.srcObject=null;
+    }
+    videoReady=false;handLandmarker=null;
+    const w=document.getElementById('webcamWrap');if(w)w.classList.remove('on');
+  }
+  updateGestToggleUI();
+}
+
+function toggleGesture(){
+  if(gestEnabled)stopGesture();
+  else startGesture();
+}
+if(gestToggleBtn)gestToggleBtn.addEventListener('click',toggleGesture);
+
+// 每帧调用：节流检测 + 缓动应用（旋转/推拉）
+function updateGesture(dt){
+  detectCount++;
+  if(detectCount%GEST_DETECT_INTERVAL===0&&handLandmarker&&videoReady&&webcamVideo.readyState>=2){
+    try{
+      const res=handLandmarker.detectForVideo(webcamVideo,performance.now());
+      if(res.landmarks&&res.landmarks.length>0){
+        const lm=res.landmarks[0];
+        const palm=getPalmCenter(lm);
+        const size=getHandSize(lm);
+        // 3D 坐标系：手位置 → 星云姿态速度
+        // 左右 → 绕 Y 轴：手在左(palm.x 小) → 星云向左转，越靠左越快
+        // 粒子风形态下：左右 → 风向（手在左 → 向左吹），不旋转星云
+        const dx=(palm.x-0.5)*3;
+        const drive=Math.max(-1,Math.min(1,dx));
+        if(currentForm==='wind'){
+          handState.targetWindVel=(Math.abs(drive)>GEST_X_DEAD)?drive*WIND_SPEED:0;
+          handState.targetRotVel=0;
+        }else{
+          handState.targetRotVel=(Math.abs(drive)>GEST_X_DEAD)?drive*GEST_ROT_SPEED:0;
+        }
+        // 上下 → 俯仰（探头式 D）：手在上 → 俯仰加大+拉近，手在下 → 俯仰减小+推远
+        const dy=(0.5-palm.y)*3;
+        const driveY=Math.max(-1,Math.min(1,dy));
+        if(currentSeq===1){
+          handState.targetPitchVel=(Math.abs(driveY)>GEST_Y_DEAD)?driveY*PITCH_SPEED:0;
+        }
+        // 前后 → 推拉：画面中手越大 = 越靠近 → 拉近
+        if(!handState.detected){
+          handState.sizeRef=size;
+          handState.baseDist=camera.position.distanceTo(controls.target);
+          handState.targetDist=handState.baseDist;
+          // 同步当前相机俯仰（鼠标拖拽后手势接手时继承角度）
+          const dv0=new THREE.Vector3().subVectors(camera.position,controls.target);
+          handState.pitch=Math.atan2(dv0.y,Math.hypot(dv0.x,dv0.z));
+          handState.detected=true;
+        }else{
+          const ratio=size/handState.sizeRef;
+          if(Math.abs(ratio-1)>CAM_SIZE_DEAD){
+            handState.targetDist=THREE.MathUtils.clamp(
+              handState.baseDist/ratio,CAM_DIST_MIN,CAM_DIST_MAX);
+          }
+        }
+        // 序列2：手掌张合→变焦，手掌位置→平移（张开放大，合拢缩小，上下左右平移）
+        if(currentSeq===2){
+          const gs=getGatherScore(lm);
+          const zoomRaw=(gs.spread-0.08)/0.14;  // spread 0.08→0, 0.22→1
+          handState.zoomLevel+=(Math.max(0,Math.min(1,zoomRaw))-handState.zoomLevel)*ZOOM_SPEED;
+          handState.panX+=((palm.x-0.5)*PAN_RANGE-handState.panX)*PAN_SPEED;
+          handState.panY+=((0.5-palm.y)*PAN_RANGE-handState.panY)*PAN_SPEED;
+          // 云聚集：手势合拢（指尖并拢 spread 小）→ 云粒子聚成十字型（四端浓密）
+          handState.targetGather=Math.max(0,Math.min(1,(GATHER_TRIG_ON-gs.spread)/(GATHER_TRIG_ON-0.05)));
+          handState.gather+=(handState.targetGather-handState.gather)*GATHER_SPEED;
+        }
+        setGestBadge('tracking');
+      }else{
+        if(handState.detected){
+          handState.detected=false;
+          handState.targetRotVel=0;    // 手离开 → 停止旋转驱动
+          handState.targetPitchVel=0; // 手离开 → 停止俯仰驱动
+          handState.targetWindVel=0;   // 手离开 → 风渐停
+          handState.zoomLevel=0.5;handState.panX=0;handState.panY=0;handState.targetGather=0;handState.gather=0;  // 手离开 → 变焦/平移/十字复位
+          handState.targetDist=null;   // 手离开 → 推拉让位给默认视角恢复
+        }
+        setGestBadge('lost');
+      }
+    }catch(e){}
+  }
+
+  // 手势控制仅在开启时生效（关闭后鼠标/键盘操作完全正常）
+  if(gestEnabled){
+    if(handState.detected){
+      // 左右：粒子风形态 → 球面流转（在动画循环中应用）；其他形态 → 星云绕 Y 轴旋转
+      if(currentForm!=='wind'){
+        handState.rotVel+=(handState.targetRotVel-handState.rotVel)*GEST_ROT_SMOOTH;
+        orbitGroup.rotation.y+=handState.rotVel*dt;
+      }
+      // 前后 → 推拉：手近（画面中大）→ 拉近，手远 → 推远
+      if(handState.targetDist!=null){
+        const dir=new THREE.Vector3().subVectors(camera.position,controls.target);
+        const cur=dir.length();
+        const next=cur+(handState.targetDist-cur)*CAM_ZOOM_SMOOTH;
+        dir.normalize().multiplyScalar(next);
+        camera.position.copy(controls.target).add(dir);
+      }
+      // 上下 → 俯仰+距离联动（探头式 D）：手在上→俯仰加大+拉近，手在下→俯仰减小+推远
+      // L 锁俯仰（gestLockH 变量复用）
+      if(!gestLockH){
+        handState.pitchVel+=(handState.targetPitchVel-handState.pitchVel)*GEST_ROT_SMOOTH;
+        handState.pitch+=handState.pitchVel*dt;
+        handState.pitch=THREE.MathUtils.clamp(handState.pitch,PITCH_MIN,PITCH_MAX);
+      }
+      // 应用俯仰到相机位置（保持水平方位，推拉距离之上叠加俯仰距离缩放）
+      {
+        const tgt=controls.target;
+        const dv=new THREE.Vector3().subVectors(camera.position,tgt);
+        const curDist=dv.length();
+        const horiz=Math.hypot(dv.x,dv.z);
+        const hx=horiz>1e-6?dv.x/horiz:1;
+        const hz=horiz>1e-6?dv.z/horiz:0;
+        const pitchN=(handState.pitch-PITCH_MIN)/(PITCH_MAX-PITCH_MIN);
+        const distScale=PITCH_DIST_FAR+(PITCH_DIST_NEAR-PITCH_DIST_FAR)*pitchN;
+        dv.set(hx*Math.cos(handState.pitch),Math.sin(handState.pitch),hz*Math.cos(handState.pitch)).multiplyScalar(curDist*distScale);
+        camera.position.copy(tgt).add(dv);
+      }
+    }else{
+      // 手离开画面 → 星云平滑恢复正面姿态，相机平滑回到斜上方默认视角
+      // 高度锁定 L 时：只恢复水平位置，保持当前锁定高度
+      // （粒子自身的自转/漂移动画不受影响，继续播放）
+      orbitGroup.rotation.y+=(0-orbitGroup.rotation.y)*HOME_RECOVER_SMOOTH;
+      windGroup.rotation.y+=(0-windGroup.rotation.y)*HOME_RECOVER_SMOOTH;   // 风停回正
+      if(gestLockH){
+        camera.position.x+=(HOME_CAM_POS.x-camera.position.x)*HOME_RECOVER_SMOOTH;
+        camera.position.z+=(HOME_CAM_POS.z-camera.position.z)*HOME_RECOVER_SMOOTH;
+      }else{
+        camera.position.lerp(HOME_CAM_POS,HOME_RECOVER_SMOOTH);
+      }
+    }
+  }
+}
 
 /*
  * =====================================================================
@@ -256,7 +688,7 @@ let userBloom        = BLOOM_STRENGTH_DEF;
 let currentScheme    = 'deepspace';
 let currentTint      = 'none';
 let currentTintHue   = null;
-let currentForm      = 'nebula';   // 'nebula' 星云(一型) | 'cloud' 无定形云(二型)
+let currentForm      = 'nebula';   // 'nebula' 星云 | 'cloud' 无定形云 | 'wind' 粒子风
 
 // ==================== SCENE SETUP ====================
 
@@ -273,7 +705,7 @@ scene.background = new THREE.Color('#0a0816'); // 更深邃的黑蓝紫底色
 scene.fog = new THREE.FogExp2(0x0a0816, 0.00007);
 
 const camera = new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,100);
-camera.position.set(0,1.8,15);
+camera.position.set(0,15.6,9);     // 默认视角：斜上方 60° 俯瞰（距离≈18，更高更远）
 camera.lookAt(0,0,0);
 
 const controls = new OrbitControls(camera,renderer.domElement);
@@ -430,19 +862,27 @@ function gauss(){
 // ==================== BUILD PARTICLES：中心球体 + 三重环带 ====================
 
 const layerDefs = [
-  {name:'sphere',baseSize:0.32,brightness:1.00,schemeKey:'sphere',countFrac:0.25},
+  {name:'sphere',baseSize:0.32,brightness:1.00,schemeKey:'sphere',countFrac:0.13},
   {name:'ring1', baseSize:0.26,brightness:1.05,schemeKey:'ring1', countFrac:0.25},
   {name:'ring2', baseSize:0.22,brightness:0.95,schemeKey:'ring2', countFrac:0.25},
   {name:'ring3', baseSize:0.18,brightness:0.85,schemeKey:'ring3', countFrac:0.25},
 ];
 
 const layers = [];
+// 手势旋转统一作用于外层 orbitGroup，星云/云两种形态都会跟着转
+const orbitGroup = new THREE.Group();
+scene.add(orbitGroup);
+
 const particleGroup = new THREE.Group();
-scene.add(particleGroup);
+orbitGroup.add(particleGroup);
 
 const cloudGroup = new THREE.Group();   // 二型：无定形云粒子
 cloudGroup.visible = false;
-scene.add(cloudGroup);
+orbitGroup.add(cloudGroup);
+
+const windGroup = new THREE.Group();    // 三型：粒子风
+windGroup.visible = false;
+orbitGroup.add(windGroup);
 
 const allParts = [];
 for(const def of layerDefs){
@@ -589,6 +1029,27 @@ for(const def of layerDefs){
     posArr[i*3]=x; posArr[i*3+1]=y; posArr[i*3+2]=z;
     radii[i]=Math.sqrt(x*x+y*y+z*z);
   }
+  // 十字汇聚目标：手势合拢时各粒子聚集的十字形位置（四端各成浓密团 + 横竖梁）
+  const crossArr = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    const slot=i%6, H=CROSS_HALF, TH=CROSS_THICK;
+    let tx,ty,tz;
+    if(slot<4){                 // 左/右/上/下 四端浓密团
+      const horiz=slot===0?-H:slot===1?H:0;
+      const vert =slot===2? H:slot===3?-H:0;
+      tx=slot<2?horiz:TH*0.5*gauss();
+      ty=slot>=2?vert:TH*0.5*gauss();
+      tz=TH*0.35*gauss();
+    }else if(slot===4){         // 横梁
+      tx=(Math.random()*2-1)*H*0.95; ty=TH*0.5*gauss(); tz=TH*0.35*gauss();
+    }else{                       // 竖梁
+      tx=TH*0.5*gauss(); ty=(Math.random()*2-1)*H*0.95; tz=TH*0.35*gauss();
+    }
+    crossArr[i*3]=tx; crossArr[i*3+1]=ty; crossArr[i*3+2]=tz;
+  }
+  // 十字权重：约15%的粒子不参与聚集（保持飘荡），其余粒子平滑过渡到十字形
+  const crossWeight = new Float32Array(count);
+  for(let i=0;i<count;i++) crossWeight[i]=Math.random()<0.15?0:0.85+Math.random()*0.15;
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
   geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
@@ -606,13 +1067,41 @@ for(const def of layerDefs){
     origPositions:new Float32Array(posArr),
     phases:new Float32Array(count*3),
     displacement:new Float32Array(count*3),
-    initThetas:null,radii,flickTimers:null,flickSaved:null,
+    initThetas:null,radii,flickTimers:null,flickSaved:null,crossArr,crossWeight,
     baseSize:0.22,brightness:1.0,schemeKey:'cloud',count,
     isDrift:false,
   };
   for(let i=0;i<count*3;i++)layer.phases[i]=Math.random()*Math.PI*2;
   layers.push(layer);
   recolorLayer(layer, COLOR_SCHEMES[currentScheme]);
+})();
+
+// ==================== BUILD PARTICLES：三型 粒子风（粒子绕球面流转，风向由掌心左右控制） ====================
+(function createWindParticles(){
+  const count = WIND_COUNT;
+  const posArr = new Float32Array(count*3);
+  const colArr = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    // 球面分布：粒子散布在半径≈WIND_SPHERE_R 的球壳上
+    const theta=Math.random()*Math.PI*2;
+    const phi=Math.acos(2*Math.random()-1);
+    const r=WIND_SPHERE_R+(Math.random()-0.5)*2*WIND_SHELL;
+    posArr[i*3]  =r*Math.sin(phi)*Math.cos(theta);
+    posArr[i*3+1]=r*Math.cos(phi);
+    posArr[i*3+2]=r*Math.sin(phi)*Math.sin(theta);
+    // 风的配色：青蓝 → 冰白渐变
+    const c=new THREE.Color().setHSL(0.52+Math.random()*0.10,0.35+Math.random()*0.25,0.55+Math.random()*0.35);
+    colArr[i*3]=c.r;colArr[i*3+1]=c.g;colArr[i*3+2]=c.b;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+  const mat=new THREE.PointsMaterial({
+    size:0.20,map:glowTex,vertexColors:true,
+    blending:THREE.AdditiveBlending,depthWrite:false,depthTest:true,
+    transparent:true,opacity:0.85,
+  });
+  windGroup.add(new THREE.Points(geo,mat));
 })();
 
 
@@ -628,9 +1117,23 @@ function animate(){
 
   controls.update();
 
+  // 手势检测 + 相机控制（旋转/推拉）
+  updateGesture(dt);
+
   // Global rotation (slow)
   particleGroup.rotation.y += 0.0003;
   particleGroup.updateMatrixWorld();
+
+  // ---- 序列2：变焦（手掌张→放大/近，合拢→缩小/远）+ 平移（手掌位置→粒子整体平移） ----
+  if(currentSeq===2){
+    const zoomDist=CAM_DIST_MIN+(CAM_DIST_MAX-CAM_DIST_MIN)*(1-handState.zoomLevel);
+    const dirV=new THREE.Vector3().subVectors(camera.position,controls.target).normalize();
+    const curD=camera.position.distanceTo(controls.target);
+    const nextD=curD+(zoomDist-curD)*0.06;
+    camera.position.copy(controls.target).addScaledVector(dirV,nextD);
+    orbitGroup.position.x=handState.panX;
+    orbitGroup.position.y=handState.panY;
+  }
 
   // ---- Per-layer particle update (布朗运动 + 闪烁, 无斥力) ----
   for(const layer of layers){
@@ -642,7 +1145,6 @@ function animate(){
     const disp=layer.displacement;const n=layer.count;
     const isOuter=(layer.flickTimers!==null);
     const isDrift=!!layer.isDrift;
-
     let colDirty=false;
     for(let i=0;i<n;i++){
       const i3=i*3;
@@ -660,7 +1162,11 @@ function animate(){
           const f=Math.max(0, 1 - CLOUD_SPRING_K*dt*(r-CLOUD_SOFT_RADIUS)/r);
           nx*=f; ny*=f; nz*=f;
         }
-        posArr[i3]=nx; posArr[i3+1]=ny; posArr[i3+2]=nz;
+        // 手势合拢 → 云聚成十字型（四端浓密）
+        const gx=handState.gather*layer.crossWeight[i], ta=layer.crossArr;
+        posArr[i3]  =nx*(1-gx)+ta[i3]*gx;
+        posArr[i3+1]=ny*(1-gx)+ta[i3+1]*gx;
+        posArr[i3+2]=nz*(1-gx)+ta[i3+2]*gx;
         continue;
       }
 
@@ -706,6 +1212,13 @@ function animate(){
     }
   }
 
+  // ---- 粒子风形态：粒子绕球面流转（风向由掌心左右控制，手离开风渐停） ----
+  if(currentForm==='wind'){
+    handState.windVel+=(handState.targetWindVel-handState.windVel)*GEST_ROT_SMOOTH;
+    windGroup.rotation.y+=handState.windVel*dt;
+    windGroup.scale.set(1,1,1);
+  }
+
   // ---- Bloom ----
   bloomPass.strength=userBloom+Math.sin(elapsed*0.42)*0.05;
 
@@ -734,11 +1247,16 @@ function updateActiveFormBtn(form){
   formBtns.forEach(b=>b.classList.toggle('active',b.dataset.form===form));
 }
 function switchForm(form){
-  if(!['nebula','cloud'].includes(form)||form===currentForm)return;
+  if(!['nebula','cloud','wind'].includes(form)||form===currentForm)return;
   currentForm=form;
   particleGroup.visible=(form==='nebula');
   cloudGroup.visible=(form==='cloud');
+  windGroup.visible=(form==='wind');
   updateActiveFormBtn(form);
+}
+// 循环切换形态：星云 → 云 → 风 → 星云
+function cycleForm(){
+  switchForm(currentForm==='nebula'?'cloud':currentForm==='cloud'?'wind':'nebula');
 }
 formBtns.forEach(b=>b.addEventListener('click',()=>switchForm(b.dataset.form)));
 
@@ -795,7 +1313,7 @@ window.addEventListener('keydown',e=>{
     case'r':sizeSlider.value=1.0;sizeSlider.dispatchEvent(new Event('input'));break;
     case'f':flowSlider.value=userFlowScale<0.1?1.0:0;flowSlider.dispatchEvent(new Event('input'));break;
     case'b':bloomSlider.value=userBloom>0.8?0.5:BLOOM_STRENGTH_DEF;bloomSlider.dispatchEvent(new Event('input'));break;
-    case'q':switchForm(currentForm==='nebula'?'cloud':'nebula');break;
+    case'q':cycleForm();break;
   }
 });
 
@@ -809,6 +1327,7 @@ window.addEventListener('resize',()=>{
 // ==================== STARTUP ====================
 
 setTimeout(()=>{const h=document.getElementById('hint');if(h)h.style.opacity='0';},10000);
+updateGestToggleUI();
 animate();
 </script>
 </body>
